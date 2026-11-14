@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { LayoutDashboard, Kanban, Users2, PlugZap } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  LayoutDashboard,
+  Kanban,
+  Users2,
+  PlugZap,
+  Loader2,
+} from "lucide-react";
 import { INITIAL_DEALS, KANBAN_STAGES } from "@/data/mockData";
 import {
+  AuthUser,
   ChatMessage,
   Deal,
   DealTask,
@@ -19,8 +26,24 @@ import { NewDealModal } from "@/components/pipeline/NewDealModal";
 import { Client360SlideOver } from "@/components/client360/Client360SlideOver";
 import { ContactsDirectory } from "@/components/client360/ContactsDirectory";
 import { EvolutionSettings } from "@/components/integrations/EvolutionSettings";
+import { LoginScreen } from "@/components/auth/LoginScreen";
+
+const DEMO_EVOLUTION_CONFIG: EvolutionConfig = {
+  baseUrl: "https://api.sua-evolution-api.com.br",
+  apiKey: "429683C4C977415CAAFCCE10F7D57E11",
+  instanceName: "nexus-comercial-01",
+  webhookUrl: "http://localhost:3000/api/webhooks/evolution",
+  status: "connected",
+  phoneConnected: "+55 11 99400-8811 (Comercial Matriz)",
+};
+
+const MASTER_DEALS_KEY = "nexus_crm_master_deals";
+const MASTER_EVOLUTION_KEY = "nexus_crm_master_evolution";
 
 export default function CRMWorkspacePage() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -36,14 +59,104 @@ export default function CRMWorkspacePage() {
   const [newDealDefaultStage, setNewDealDefaultStage] =
     useState<StageId>("leads");
 
-  const [evolutionConfig, setEvolutionConfig] = useState<EvolutionConfig>({
-    baseUrl: "https://api.sua-evolution-api.com.br",
-    apiKey: "429683C4C977415CAAFCCE10F7D57E11",
-    instanceName: "nexus-comercial-01",
-    webhookUrl: "http://localhost:3000/api/webhooks/evolution",
-    status: "connected",
-    phoneConnected: "+55 11 99400-8811 (Comercial Matriz)",
-  });
+  const [evolutionConfig, setEvolutionConfig] = useState<EvolutionConfig>(
+    DEMO_EVOLUTION_CONFIG
+  );
+
+  const hydrateWorkspaceForUser = useCallback((loggedUser: AuthUser) => {
+    setSelectedDealId(null);
+    setActiveTab("dashboard");
+
+    if (loggedUser.mode === "demo") {
+      setDeals(INITIAL_DEALS);
+      setEvolutionConfig({
+        ...DEMO_EVOLUTION_CONFIG,
+        webhookUrl:
+          typeof window !== "undefined"
+            ? `${window.location.origin}/api/webhooks/evolution`
+            : DEMO_EVOLUTION_CONFIG.webhookUrl,
+      });
+      return;
+    }
+
+    // Conta Real (Master Admin07) - carrega dados persistidos localmente
+    try {
+      const savedDeals = localStorage.getItem(MASTER_DEALS_KEY);
+      setDeals(savedDeals ? (JSON.parse(savedDeals) as Deal[]) : []);
+
+      const savedEvo = localStorage.getItem(MASTER_EVOLUTION_KEY);
+      if (savedEvo) {
+        setEvolutionConfig(JSON.parse(savedEvo) as EvolutionConfig);
+      } else {
+        setEvolutionConfig({
+          baseUrl: "",
+          apiKey: "",
+          instanceName: "nexus-master-01",
+          webhookUrl:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/api/webhooks/evolution`
+              : "https://crm.cadtech.com.br/api/webhooks/evolution",
+          status: "disconnected",
+        });
+      }
+    } catch {
+      setDeals([]);
+    }
+  }, []);
+
+  // Verificar sessão ativa ao carregar
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active) return;
+        if (data?.authenticated && data?.user) {
+          setUser(data.user as AuthUser);
+          hydrateWorkspaceForUser(data.user as AuthUser);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setAuthChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [hydrateWorkspaceForUser]);
+
+  // Persistir alterações da conta Master no localStorage
+  useEffect(() => {
+    if (user?.mode === "master") {
+      try {
+        localStorage.setItem(MASTER_DEALS_KEY, JSON.stringify(deals));
+      } catch {}
+    }
+  }, [deals, user]);
+
+  useEffect(() => {
+    if (user?.mode === "master") {
+      try {
+        localStorage.setItem(
+          MASTER_EVOLUTION_KEY,
+          JSON.stringify(evolutionConfig)
+        );
+      } catch {}
+    }
+  }, [evolutionConfig, user]);
+
+  const handleLoginSuccess = (loggedUser: AuthUser) => {
+    setUser(loggedUser);
+    hydrateWorkspaceForUser(loggedUser);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+    } catch {}
+    setUser(null);
+    setSelectedDealId(null);
+  };
 
   // Sincronizar classe 'dark' no elemento <html>
   useEffect(() => {
@@ -182,6 +295,27 @@ export default function CRMWorkspacePage() {
     (d) => d.stagnantDays > 3 && d.stage !== "closed"
   ).length;
 
+  if (authChecking) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#f8f9fa] dark:bg-zinc-950 text-zinc-500">
+        <div className="flex items-center gap-2.5 text-xs font-medium">
+          <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+          <span>Carregando Nexus CRM...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        onAuthenticated={handleLoginSuccess}
+        theme={theme}
+        toggleTheme={toggleTheme}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f8f9fa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       {/* Left Collapsible Sidebar */}
@@ -212,6 +346,8 @@ export default function CRMWorkspacePage() {
             setNewDealModalOpen(true);
           }}
           stagnantCount={stagnantCount}
+          user={user}
+          onLogout={handleLogout}
         />
 
         <main className="flex-1 overflow-y-auto px-4 lg:px-8 pt-6 pb-20 md:pb-6">

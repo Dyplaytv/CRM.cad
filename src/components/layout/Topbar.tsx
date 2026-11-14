@@ -11,8 +11,10 @@ import {
   MessageSquare,
   CheckCircle2,
   Menu,
+  LogOut,
 } from "lucide-react";
 import { NavTab } from "./Sidebar";
+import { AuthUser } from "@/types/crm";
 
 interface TopbarProps {
   activeTab: NavTab;
@@ -22,6 +24,8 @@ interface TopbarProps {
   onOpenCommand: () => void;
   onNewDeal: () => void;
   stagnantCount: number;
+  user: AuthUser;
+  onLogout: () => void;
 }
 
 export function Topbar({
@@ -32,6 +36,8 @@ export function Topbar({
   onOpenCommand,
   onNewDeal,
   stagnantCount,
+  user,
+  onLogout,
 }: TopbarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -182,19 +188,43 @@ export function Topbar({
           )}
         </div>
 
-        {/* User Profile Pill */}
+        {/* User Profile Pill & Logout */}
         <div className="flex items-center gap-2.5 pl-2 border-l border-zinc-200 dark:border-zinc-800">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white text-xs font-semibold shadow-sm">
-            LA
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-semibold shadow-sm ${
+              user.mode === "master"
+                ? "bg-gradient-to-tr from-emerald-600 to-teal-500"
+                : "bg-gradient-to-tr from-indigo-600 to-violet-500"
+            }`}
+          >
+            {user.initials}
           </div>
           <div className="hidden lg:block text-left">
-            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 leading-none">
-              Lucas Andrade
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 leading-none">
+                {user.name}
+              </p>
+              <span
+                className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                  user.mode === "master"
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25"
+                    : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25"
+                }`}
+              >
+                {user.mode === "master" ? "MASTER" : "DEMO"}
+              </span>
+            </div>
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Head of Sales
+              {user.role}
             </p>
           </div>
+          <button
+            onClick={onLogout}
+            title="Sair / Trocar de conta"
+            className="w-8 h-8 rounded-xl flex items-center justify-center border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-rose-500 hover:border-rose-500/30 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </header>

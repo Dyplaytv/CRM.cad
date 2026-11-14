@@ -99,3 +99,11 @@ export interface EvolutionConfig {
   status: "connected" | "disconnected" | "connecting";
   phoneConnected?: string;
 }
+
+export interface AuthUser {
+  username: string;
+  name: string;
+  role: string;
+  initials: string;
+  mode: "demo" | "master";
+}
