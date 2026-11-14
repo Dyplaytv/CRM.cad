@@ -8,6 +8,8 @@ const inter = Inter({
   display: "swap",
 });
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Nexus CRM | High-Velocity Sales & Evolution API WhatsApp Hub",
   description:
