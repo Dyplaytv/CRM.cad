@@ -1,0 +1,435 @@
+"use client";
+
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+import {
+  QrCode,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  KeyRound,
+  Globe,
+  Webhook,
+  Server,
+  ShieldCheck,
+  Terminal,
+  Copy,
+  Check,
+  Radio,
+} from "lucide-react";
+import { EvolutionConfig } from "@/types/crm";
+import { fetchEvolutionQrCode } from "@/services/evolutionApi";
+
+interface EvolutionSettingsProps {
+  config: EvolutionConfig;
+  onUpdateConfig: (next: EvolutionConfig) => void;
+}
+
+export function EvolutionSettings({
+  config,
+  onUpdateConfig,
+}: EvolutionSettingsProps) {
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [qrPayload, setQrPayload] = useState<{
+    pairingCode: string;
+    code: string;
+    endpoint: string;
+  }>({
+    pairingCode: "NXS8-92BR",
+    code: "2@EvolutionAPI_v2_NexusCRM_Token_994812",
+    endpoint: `${config.baseUrl}/instance/connect/${config.instanceName}`,
+  });
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<string | null>(
+    null
+  );
+
+  const handleGenerateQrCode = async () => {
+    setLoadingQr(true);
+    onUpdateConfig({ ...config, status: "connecting" });
+    const res = await fetchEvolutionQrCode(config);
+    setQrPayload(res);
+    setLoadingQr(false);
+  };
+
+  const handleToggleConnection = () => {
+    if (config.status === "connected") {
+      onUpdateConfig({ ...config, status: "disconnected" });
+    } else {
+      onUpdateConfig({
+        ...config,
+        status: "connected",
+        phoneConnected: "+55 11 99400-8811 (Comercial Matriz)",
+      });
+    }
+  };
+
+  const handleCopyWebhook = () => {
+    navigator.clipboard.writeText(config.webhookUrl);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2000);
+  };
+
+  const handleTestWebhookEndpoint = async () => {
+    try {
+      const res = await fetch("/api/webhooks/evolution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "messages.upsert",
+          instance: config.instanceName,
+          data: {
+            key: {
+              remoteJid: "5511998124401@s.whatsapp.net",
+              fromMe: false,
+              id: "PING_TEST_001",
+            },
+            message: {
+              conversation:
+                "Ping de teste de Webhook da Evolution API para o Nexus CRM!",
+            },
+          },
+        }),
+      });
+      const data = await res.json();
+      setWebhookTestResult(JSON.stringify(data, null, 2));
+    } catch {
+      setWebhookTestResult("Erro ao testar rota local.");
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-10">
+      {/* Top Status Banner */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 p-6 drop-shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
+              config.status === "connected"
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-500"
+            }`}
+          >
+            {config.status === "connected" ? (
+              <CheckCircle2 className="w-6 h-6" />
+            ) : (
+              <XCircle className="w-6 h-6" />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                Instância WhatsApp: {config.instanceName}
+              </h2>
+              <span
+                className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                  config.status === "connected"
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                    : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                }`}
+              >
+                {config.status === "connected"
+                  ? "CONECTADO • ONLINE"
+                  : config.status === "connecting"
+                  ? "AGUARDANDO LEITURA QR CODE..."
+                  : "DESCONECTADO"}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              {config.status === "connected"
+                ? `Número pareado: ${
+                    config.phoneConnected || "+55 11 99400-8811"
+                  } • Sincronização automática de mensagens e leads ativa`
+                : "Escaneie o QR Code ao lado com seu aplicativo WhatsApp para parear a Evolution API"}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleGenerateQrCode}
+            className="px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/80 hover:bg-zinc-100 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center gap-1.5 transition-colors"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loadingQr ? "animate-spin" : ""}`}
+            />
+            GET /instance/connect
+          </button>
+
+          <button
+            onClick={handleToggleConnection}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all ${
+              config.status === "connected"
+                ? "bg-rose-600 hover:bg-rose-500"
+                : "bg-emerald-600 hover:bg-emerald-500"
+            }`}
+          >
+            {config.status === "connected"
+              ? "Desconectar Instância"
+              : "Simular Leitura do QR Code"}
+          </button>
+        </div>
+      </div>
+
+      {/* Main Grid: Credentials & Webhook Left | QR Code Connect Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Credenciais da Evolution API + Webhooks */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:col-span-7 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 p-6 drop-shadow-sm space-y-5"
+        >
+          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+            <div>
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Server className="w-4 h-4 text-indigo-500" />
+                Parâmetros do Servidor Evolution API
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Configure os endpoints REST utilizados pelo módulo de chat 360º
+              </p>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+              v2.1.x Ready
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="sm:col-span-2">
+              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                URL Base da Evolution API
+              </label>
+              <input
+                type="text"
+                value={config.baseUrl}
+                onChange={(e) =>
+                  onUpdateConfig({ ...config, baseUrl: e.target.value })
+                }
+                placeholder="https://api.sua-evolution-api.com.br"
+                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                Nome da Instância (instanceName)
+              </label>
+              <input
+                type="text"
+                value={config.instanceName}
+                onChange={(e) =>
+                  onUpdateConfig({ ...config, instanceName: e.target.value })
+                }
+                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                Global / Instance API Key
+              </label>
+              <input
+                type="password"
+                value={config.apiKey}
+                onChange={(e) =>
+                  onUpdateConfig({ ...config, apiKey: e.target.value })
+                }
+                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="sm:col-span-2 pt-2">
+              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                <Webhook className="w-3.5 h-3.5 text-emerald-500" />
+                Endpoint local de Webhook (Recebimento em Tempo Real)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={config.webhookUrl}
+                  className="flex-1 rounded-xl px-3.5 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyWebhook}
+                  className="px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  {copiedWebhook ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      Copiado
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      Copiar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Endpoints Documentation & Live Test */}
+          <div className="p-4 rounded-xl bg-zinc-950 text-zinc-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold flex items-center gap-1.5 text-emerald-400">
+                <Terminal className="w-4 h-4" />
+                Rotas Mapeadas no CRM
+              </span>
+              <button
+                type="button"
+                onClick={handleTestWebhookEndpoint}
+                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white flex items-center gap-1"
+              >
+                <Radio className="w-3 h-3" />
+                Disparar Webhook Teste
+              </button>
+            </div>
+
+            <div className="space-y-1.5 font-mono text-[11px]">
+              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                <span className="text-emerald-400">POST</span>
+                <span className="text-zinc-300 truncate max-w-[360px]">
+                  {config.baseUrl}/message/sendText/{config.instanceName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                <span className="text-sky-400">GET</span>
+                <span className="text-zinc-300 truncate max-w-[360px]">
+                  {config.baseUrl}/instance/connect/{config.instanceName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                <span className="text-violet-400">WEBHOOK</span>
+                <span className="text-zinc-300 truncate max-w-[360px]">
+                  POST /api/webhooks/evolution (messages.upsert)
+                </span>
+              </div>
+            </div>
+
+            {webhookTestResult && (
+              <pre className="p-2.5 rounded-lg bg-black/60 text-[10px] text-emerald-300 overflow-x-auto">
+                {webhookTestResult}
+              </pre>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Right Column: QR Code Viewer (GET /instance/connect) */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="lg:col-span-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 p-6 drop-shadow-sm flex flex-col items-center justify-between text-center"
+        >
+          <div className="w-full flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+            <div className="text-left">
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <QrCode className="w-4 h-4 text-emerald-500" />
+                QR Code da Evolution API
+              </h3>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Retorno de GET /instance/connect/{config.instanceName}
+              </p>
+            </div>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              Pairing: {qrPayload.pairingCode}
+            </span>
+          </div>
+
+          {/* Crisp Simulated SVG QR Code with Whatsapp Emblem */}
+          <div className="my-6 relative p-5 rounded-2xl bg-white border-2 border-zinc-200 shadow-inner">
+            <svg
+              viewBox="0 0 210 210"
+              className={`w-52 h-52 ${
+                loadingQr ? "opacity-30 blur-sm" : "opacity-100"
+              } transition-all`}
+            >
+              {/* Finder Patterns */}
+              <rect x="10" y="10" width="50" height="50" fill="none" stroke="#18181b" strokeWidth="8" />
+              <rect x="24" y="24" width="22" height="22" fill="#18181b" />
+
+              <rect x="150" y="10" width="50" height="50" fill="none" stroke="#18181b" strokeWidth="8" />
+              <rect x="164" y="24" width="22" height="22" fill="#18181b" />
+
+              <rect x="10" y="150" width="50" height="50" fill="none" stroke="#18181b" strokeWidth="8" />
+              <rect x="24" y="164" width="22" height="22" fill="#18181b" />
+
+              {/* Data Matrix Modules */}
+              <g fill="#18181b">
+                <rect x="75" y="12" width="10" height="10" />
+                <rect x="95" y="12" width="20" height="10" />
+                <rect x="125" y="12" width="10" height="20" />
+                <rect x="75" y="32" width="15" height="10" />
+                <rect x="105" y="32" width="10" height="15" />
+                <rect x="75" y="52" width="25" height="10" />
+                <rect x="115" y="52" width="20" height="10" />
+
+                <rect x="12" y="75" width="20" height="10" />
+                <rect x="42" y="75" width="15" height="15" />
+                <rect x="12" y="95" width="10" height="25" />
+                <rect x="32" y="105" width="25" height="10" />
+                <rect x="12" y="130" width="35" height="10" />
+
+                <rect x="75" y="75" width="15" height="15" />
+                <rect x="125" y="75" width="15" height="15" />
+                <rect x="75" y="120" width="15" height="15" />
+                <rect x="115" y="120" width="25" height="12" />
+
+                <rect x="150" y="75" width="20" height="10" />
+                <rect x="180" y="75" width="20" height="20" />
+                <rect x="150" y="95" width="15" height="25" />
+                <rect x="175" y="110" width="25" height="10" />
+                <rect x="150" y="135" width="30" height="10" />
+
+                <rect x="75" y="150" width="20" height="12" />
+                <rect x="105" y="150" width="12" height="25" />
+                <rect x="130" y="155" width="25" height="10" />
+                <rect x="165" y="150" width="35" height="12" />
+                <rect x="75" y="175" width="20" height="25" />
+                <rect x="125" y="175" width="30" height="12" />
+                <rect x="165" y="175" width="20" height="25" />
+                <rect x="105" y="188" width="45" height="12" />
+              </g>
+
+              {/* Center Badge */}
+              <rect x="85" y="85" width="40" height="40" rx="10" fill="#10b981" />
+              <circle cx="105" cy="105" r="10" fill="#ffffff" />
+            </svg>
+
+            {config.status === "connected" && (
+              <div className="absolute inset-0 rounded-2xl bg-emerald-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-white">
+                <ShieldCheck className="w-12 h-12 text-emerald-400 mb-2" />
+                <p className="text-sm font-bold">Sessão WhatsApp Ativa</p>
+                <p className="text-[11px] text-emerald-200 mt-1">
+                  Instância conectada e sincronizando mensagens com o Kanban.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="w-full space-y-2 text-left bg-zinc-50 dark:bg-zinc-950 p-3.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800">
+            <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
+              Como conectar sua instância:
+            </p>
+            <ol className="text-[11px] text-zinc-500 dark:text-zinc-400 space-y-1 list-decimal list-inside">
+              <li>Abra o WhatsApp no celular comercial</li>
+              <li>
+                Toque em <strong>Aparelhos Conectados</strong> &gt; Conectar um
+                aparelho
+              </li>
+              <li>
+                Aponte a câmera para o QR Code gerado por{" "}
+                <code>GET /instance/connect</code>
+              </li>
+            </ol>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
