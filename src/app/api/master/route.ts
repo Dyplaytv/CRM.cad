@@ -9,6 +9,8 @@ import {
   listCompanies,
   listManagers,
   toggleCompanyActive,
+  updateCompany,
+  updateManager,
 } from "@/lib/crmStore";
 
 export async function GET(req: NextRequest) {
@@ -109,4 +111,59 @@ export async function DELETE(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, stats: getMasterOverviewStats() });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = getSessionUser(req);
+  if (!user || user.mode !== "super_master") {
+    return NextResponse.json({ ok: false, error: "Acesso restrito ao Master." }, { status: 403 });
+  }
+
+  try {
+    const body = (await req.json()) as {
+      action?: "updateCompany" | "updateManager";
+      id?: string;
+      companyId?: string;
+      name?: string;
+      document?: string;
+      username?: string;
+      password?: string;
+    };
+
+    if (body.action === "updateCompany") {
+      const result = updateCompany(body.id || "", {
+        name: body.name || "",
+        document: body.document,
+      });
+      if (!result.ok) {
+        return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        ok: true,
+        company: result.company,
+        stats: getMasterOverviewStats(),
+      });
+    }
+
+    if (body.action === "updateManager") {
+      const result = updateManager(body.id || "", {
+        companyId: body.companyId || "",
+        name: body.name || "",
+        username: body.username || "",
+        password: body.password || undefined,
+      });
+      if (!result.ok) {
+        return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        ok: true,
+        manager: result.manager,
+        stats: getMasterOverviewStats(),
+      });
+    }
+
+    return NextResponse.json({ ok: false, error: "Ação inválida." }, { status: 400 });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Erro ao atualizar registro." }, { status: 400 });
+  }
 }

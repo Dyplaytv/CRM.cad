@@ -156,6 +156,49 @@ export function toggleCompanyActive(id: string): CompanyAccount | null {
   return updatedItem;
 }
 
+export function updateCompany(
+  id: string,
+  input: { name: string; document?: string }
+): { ok: true; company: CompanyAccount } | { ok: false; error: string } {
+  const name = input.name.trim();
+  if (!name) {
+    return { ok: false, error: "Informe o nome da empresa." };
+  }
+  const companies = loadCompanies();
+  if (
+    companies.some(
+      (c) => c.id !== id && c.name.toLowerCase() === name.toLowerCase()
+    )
+  ) {
+    return { ok: false, error: "Já existe outra empresa com este nome." };
+  }
+  let updated: CompanyAccount | null = null;
+  const next = companies.map((c) => {
+    if (c.id !== id) return c;
+    updated = {
+      ...c,
+      name,
+      document:
+        input.document !== undefined ? input.document.trim() : c.document,
+    };
+    return updated;
+  });
+  if (!updated) {
+    return { ok: false, error: "Empresa não encontrada." };
+  }
+  saveCompanies(next);
+  // Atualiza companyName nos gerentes vinculados
+  const managers = loadManagers();
+  let managersChanged = false;
+  const nextManagers = managers.map((m) => {
+    if (m.companyId !== id) return m;
+    managersChanged = true;
+    return { ...m, companyName: name };
+  });
+  if (managersChanged) saveManagers(nextManagers);
+  return { ok: true, company: updated };
+}
+
 export function deleteCompany(id: string): boolean {
   const companies = loadCompanies();
   const next = companies.filter((c) => c.id !== id);
@@ -279,6 +322,71 @@ export function deleteManager(id: string): boolean {
   if (next.length === managers.length) return false;
   saveManagers(next);
   return true;
+}
+
+export function updateManager(
+  id: string,
+  input: {
+    companyId: string;
+    name: string;
+    username: string;
+    password?: string;
+  }
+): { ok: true; manager: ManagerAccount } | { ok: false; error: string } {
+  const company = getCompanyById(input.companyId);
+  if (!company) {
+    return { ok: false, error: "Empresa selecionada não encontrada." };
+  }
+  const name = input.name.trim();
+  const username = input.username.trim();
+  if (!name || !username) {
+    return { ok: false, error: "Nome e login são obrigatórios." };
+  }
+  if (input.password && input.password.length < 4) {
+    return { ok: false, error: "A nova senha deve ter pelo menos 4 caracteres." };
+  }
+
+  const normalized = username.toLowerCase();
+  if (
+    normalized === "admin07" ||
+    normalized === "master admin07" ||
+    normalized === "lucas.demo"
+  ) {
+    return { ok: false, error: "Este login é reservado pelo sistema." };
+  }
+
+  const managers = loadManagers();
+  if (
+    managers.some(
+      (m) => m.id !== id && m.username.toLowerCase() === normalized
+    ) ||
+    loadAgents().some((a) => a.username.toLowerCase() === normalized)
+  ) {
+    return { ok: false, error: "Este login já está em uso." };
+  }
+
+  let updated: StoredManager | null = null;
+  const next = managers.map((m) => {
+    if (m.id !== id) return m;
+    updated = {
+      ...m,
+      companyId: company.id,
+      companyName: company.name,
+      name,
+      username,
+      initials: computeInitials(name),
+      passwordHash: input.password
+        ? hashPassword(input.password)
+        : m.passwordHash,
+    };
+    return updated;
+  });
+
+  if (!updated) {
+    return { ok: false, error: "Gerente não encontrado." };
+  }
+  saveManagers(next);
+  return { ok: true, manager: toPublicManager(updated) };
 }
 
 export function verifyManagerCredentials(

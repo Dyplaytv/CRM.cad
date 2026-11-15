@@ -589,6 +589,53 @@ export default function CRMWorkspacePage() {
     }
   };
 
+  const handleUpdateCompany = async (
+    id: string,
+    input: { name: string; document?: string }
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateCompany", id, ...input }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao atualizar empresa." };
+      }
+      await loadMasterOverview();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
+  const handleUpdateManager = async (
+    id: string,
+    input: {
+      companyId: string;
+      name: string;
+      username: string;
+      password?: string;
+    }
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateManager", id, ...input }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao atualizar gerente." };
+      }
+      await loadMasterOverview();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
   const handleDeleteManager = async (managerId: string) => {
     try {
       const res = await fetch(
@@ -854,9 +901,11 @@ export default function CRMWorkspacePage() {
               managers={managers}
               stats={masterStats}
               onCreateCompany={handleCreateCompany}
+              onUpdateCompany={handleUpdateCompany}
               onToggleCompany={handleToggleCompany}
               onDeleteCompany={handleDeleteCompany}
               onCreateManager={handleCreateManager}
+              onUpdateManager={handleUpdateManager}
               onDeleteManager={handleDeleteManager}
             />
           )}

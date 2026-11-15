@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Building2,
   UserPlus,
@@ -15,6 +15,9 @@ import {
   Eye,
   EyeOff,
   TrendingUp,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { CompanyAccount, ManagerAccount } from "@/types/crm";
 
@@ -42,6 +45,10 @@ interface MasterDashboardProps {
     name: string;
     document?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  onUpdateCompany: (
+    id: string,
+    input: { name: string; document?: string }
+  ) => Promise<{ ok: boolean; error?: string }>;
   onToggleCompany: (companyId: string) => Promise<void>;
   onDeleteCompany: (companyId: string) => Promise<void>;
   onCreateManager: (input: {
@@ -50,6 +57,15 @@ interface MasterDashboardProps {
     username: string;
     password: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  onUpdateManager: (
+    id: string,
+    input: {
+      companyId: string;
+      name: string;
+      username: string;
+      password?: string;
+    }
+  ) => Promise<{ ok: boolean; error?: string }>;
   onDeleteManager: (managerId: string) => Promise<void>;
 }
 
@@ -58,9 +74,11 @@ export function MasterDashboard({
   managers,
   stats,
   onCreateCompany,
+  onUpdateCompany,
   onToggleCompany,
   onDeleteCompany,
   onCreateManager,
+  onUpdateManager,
   onDeleteManager,
 }: MasterDashboardProps) {
   const [companyName, setCompanyName] = useState("");
@@ -83,6 +101,81 @@ export function MasterDashboard({
     type: "ok" | "err";
     text: string;
   } | null>(null);
+
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
+  const [editCompanyForm, setEditCompanyForm] = useState({
+    name: "",
+    document: "",
+  });
+  const [editCompanyError, setEditCompanyError] = useState<string | null>(null);
+
+  const [editingManagerId, setEditingManagerId] = useState<string | null>(null);
+  const [editManagerForm, setEditManagerForm] = useState({
+    companyId: "",
+    name: "",
+    username: "",
+    password: "",
+  });
+  const [editManagerError, setEditManagerError] = useState<string | null>(null);
+
+  const mgrNameInputRef = useRef<HTMLInputElement>(null);
+
+  const startEditCompany = (company: CompanyAccount) => {
+    setEditingCompanyId(company.id);
+    setEditCompanyForm({
+      name: company.name,
+      document: company.document || "",
+    });
+    setEditCompanyError(null);
+  };
+
+  const handleSaveEditCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCompanyId) return;
+    setEditCompanyError(null);
+    const res = await onUpdateCompany(editingCompanyId, editCompanyForm);
+    if (!res.ok) {
+      setEditCompanyError(res.error || "Erro ao atualizar empresa.");
+      return;
+    }
+    setEditingCompanyId(null);
+  };
+
+  const startEditManager = (mgr: ManagerAccount) => {
+    setEditingManagerId(mgr.id);
+    setEditManagerForm({
+      companyId: mgr.companyId,
+      name: mgr.name,
+      username: mgr.username,
+      password: "",
+    });
+    setEditManagerError(null);
+  };
+
+  const handleSaveEditManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingManagerId) return;
+    setEditManagerError(null);
+    const res = await onUpdateManager(editingManagerId, {
+      ...editManagerForm,
+      password: editManagerForm.password || undefined,
+    });
+    if (!res.ok) {
+      setEditManagerError(res.error || "Erro ao atualizar gerente.");
+      return;
+    }
+    setEditingManagerId(null);
+  };
+
+  const handleQuickAddManagerForCompany = (companyId: string) => {
+    setSelectedCompanyId(companyId);
+    setMgrMsg(null);
+    mgrNameInputRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    setTimeout(() => mgrNameInputRef.current?.focus(), 250);
+  };
 
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,6 +416,7 @@ export function MasterDashboard({
                   Nome do Gerente
                 </label>
                 <input
+                  ref={mgrNameInputRef}
                   type="text"
                   required
                   value={mgrName}
@@ -418,6 +512,74 @@ export function MasterDashboard({
             const cStats = stats.perCompany.find(
               (s) => s.companyId === company.id
             );
+            const isEditing = editingCompanyId === company.id;
+
+            if (isEditing) {
+              return (
+                <form
+                  key={company.id}
+                  onSubmit={handleSaveEditCompany}
+                  className="p-4 rounded-xl border border-indigo-500/40 bg-indigo-500/5 space-y-2.5"
+                >
+                  <div>
+                    <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                      Nome da Empresa
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editCompanyForm.name}
+                      onChange={(e) =>
+                        setEditCompanyForm((p) => ({
+                          ...p,
+                          name: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                      CNPJ ou Segmento
+                    </label>
+                    <input
+                      type="text"
+                      value={editCompanyForm.document}
+                      onChange={(e) =>
+                        setEditCompanyForm((p) => ({
+                          ...p,
+                          document: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  {editCompanyError && (
+                    <p className="text-[11px] text-rose-500">
+                      {editCompanyError}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditingCompanyId(null)}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 flex items-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Salvar
+                    </button>
+                  </div>
+                </form>
+              );
+            }
+
             return (
               <div
                 key={company.id}
@@ -451,6 +613,21 @@ export function MasterDashboard({
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleQuickAddManagerForCompany(company.id)}
+                    title="Criar gerente para esta empresa"
+                    className="px-2 py-1.5 rounded-lg text-[11px] font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center gap-1 transition-colors"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Gerente</span>
+                  </button>
+                  <button
+                    onClick={() => startEditCompany(company)}
+                    title="Editar nome da empresa"
+                    className="p-2 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => onToggleCompany(company.id)}
                     title={
@@ -496,7 +673,118 @@ export function MasterDashboard({
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {managers.map((mgr) => (
+            {managers.map((mgr) => {
+              const isEditingMgr = editingManagerId === mgr.id;
+              if (isEditingMgr) {
+                return (
+                  <form
+                    key={mgr.id}
+                    onSubmit={handleSaveEditManager}
+                    className="p-4 rounded-xl border border-indigo-500/40 bg-indigo-500/5 space-y-2.5"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                          Nome
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editManagerForm.name}
+                          onChange={(e) =>
+                            setEditManagerForm((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                          Login
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editManagerForm.username}
+                          onChange={(e) =>
+                            setEditManagerForm((p) => ({
+                              ...p,
+                              username: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                          Empresa
+                        </label>
+                        <select
+                          value={editManagerForm.companyId}
+                          onChange={(e) =>
+                            setEditManagerForm((p) => ({
+                              ...p,
+                              companyId: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        >
+                          {companies.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-zinc-400 mb-1">
+                          Nova Senha (opcional)
+                        </label>
+                        <input
+                          type="password"
+                          value={editManagerForm.password}
+                          onChange={(e) =>
+                            setEditManagerForm((p) => ({
+                              ...p,
+                              password: e.target.value,
+                            }))
+                          }
+                          placeholder="Manter atual"
+                          className="w-full rounded-lg px-2.5 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                    {editManagerError && (
+                      <p className="text-[11px] text-rose-500">
+                        {editManagerError}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingManagerId(null)}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 flex items-center gap-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Salvar
+                      </button>
+                    </div>
+                  </form>
+                );
+              }
+
+              return (
               <div
                 key={mgr.id}
                 className="p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 flex items-center justify-between gap-3"
@@ -521,15 +809,25 @@ export function MasterDashboard({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => onDeleteManager(mgr.id)}
-                  title="Remover gerente"
-                  className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors shrink-0"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => startEditManager(mgr)}
+                    title="Editar gerente"
+                    className="p-2 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => onDeleteManager(mgr.id)}
+                    title="Remover gerente"
+                    className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
