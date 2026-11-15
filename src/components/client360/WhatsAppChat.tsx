@@ -5,7 +5,6 @@ import {
   Send,
   Paperclip,
   CheckCheck,
-  Radio,
   Code2,
   Sparkles,
   Phone,
@@ -199,64 +198,6 @@ export function WhatsAppChat({
     setSending(false);
   };
 
-  // Dispara o listener real de Webhook do CRM (/api/webhooks/evolution) simulando uma resposta em tempo real do cliente
-  const handleSimulateIncomingWebhook = async () => {
-    const sampleReplies = [
-      "Perfeito! Acabei de aprovar internamente com a diretoria financeira. Podemos avançar!",
-      "Muito obrigado pelo retorno rápido. Você consegue incluir o treinamento da equipe no pacote?",
-      "Excelente! Recebi aqui no WhatsApp. Vou assinar o contrato ainda hoje.",
-    ];
-    const chosenText =
-      sampleReplies[Math.floor(Math.random() * sampleReplies.length)];
-
-    const webhookPayload = {
-      event: "messages.upsert",
-      instance: evolutionConfig.instanceName,
-      data: {
-        key: {
-          remoteJid: `${deal.contactPhone.replace(/\D/g, "")}@s.whatsapp.net`,
-          fromMe: false,
-          id: `WHK_${Date.now()}`,
-        },
-        pushName: deal.contactName,
-        message: {
-          conversation: chosenText,
-        },
-        messageTimestamp: Math.floor(Date.now() / 1000),
-      },
-    };
-
-    try {
-      const res = await fetch("/api/webhooks/evolution", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(webhookPayload),
-      });
-      const json = await res.json();
-
-      setLastApiLog({
-        method: "WEBHOOK -> POST /api/webhooks/evolution",
-        endpoint: "/api/webhooks/evolution",
-        payload: webhookPayload,
-        response: json,
-      });
-    } catch {
-      // ignore network error
-    }
-
-    const now = new Date().toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    onAddMessage(deal.id, {
-      id: `whk-${Date.now()}`,
-      sender: "client",
-      text: chosenText,
-      timestamp: now,
-    });
-  };
-
   return (
     <div className="flex flex-col h-full rounded-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden bg-[#efeae2] dark:bg-[#0b141a]">
       {/* WhatsApp Web Style Header */}
@@ -290,16 +231,6 @@ export function WhatsAppChat({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleSimulateIncomingWebhook}
-            title="Simular recebimento de Webhook da Evolution API (messages.upsert)"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
-          >
-            <Radio className="w-3.5 h-3.5 animate-pulse" />
-            <span className="hidden sm:inline">Simular Webhook</span>
-          </button>
-
           <button
             type="button"
             onClick={() => setShowApiInspector(!showApiInspector)}

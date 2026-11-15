@@ -3,11 +3,65 @@ import {
   getWebhookMessagesSince,
   pushWebhookMessage,
 } from "@/lib/webhookStore";
+import { getWorkspaceEvolutionConfig } from "@/lib/crmStore";
+
+interface EvolutionMessageContent {
+  conversation?: string;
+  base64?: string;
+  extendedTextMessage?: {
+    text?: string;
+  };
+  imageMessage?: {
+    caption?: string;
+    mimetype?: string;
+    url?: string;
+    jpegThumbnail?: string;
+  };
+  stickerMessage?: {
+    mimetype?: string;
+    url?: string;
+  };
+  documentMessage?: {
+    caption?: string;
+    mimetype?: string;
+    fileName?: string;
+    url?: string;
+  };
+  documentWithCaptionMessage?: {
+    message?: {
+      documentMessage?: {
+        caption?: string;
+        mimetype?: string;
+        fileName?: string;
+        url?: string;
+      };
+    };
+  };
+  videoMessage?: {
+    caption?: string;
+    mimetype?: string;
+    url?: string;
+  };
+  audioMessage?: {
+    mimetype?: string;
+    url?: string;
+  };
+  ephemeralMessage?: {
+    message?: EvolutionMessageContent;
+  };
+  viewOnceMessage?: {
+    message?: EvolutionMessageContent;
+  };
+  viewOnceMessageV2?: {
+    message?: EvolutionMessageContent;
+  };
+}
 
 interface EvolutionV23WebhookBody {
   event?: string;
   instance?: string;
   sender?: string;
+  base64?: string;
   data?: {
     key?: {
       remoteJid?: string;
@@ -17,47 +71,7 @@ interface EvolutionV23WebhookBody {
       id?: string;
     };
     pushName?: string;
-    message?: {
-      conversation?: string;
-      base64?: string;
-      extendedTextMessage?: {
-        text?: string;
-      };
-      imageMessage?: {
-        caption?: string;
-        mimetype?: string;
-        url?: string;
-      };
-      stickerMessage?: {
-        mimetype?: string;
-        url?: string;
-      };
-      documentMessage?: {
-        caption?: string;
-        mimetype?: string;
-        fileName?: string;
-        url?: string;
-      };
-      documentWithCaptionMessage?: {
-        message?: {
-          documentMessage?: {
-            caption?: string;
-            mimetype?: string;
-            fileName?: string;
-            url?: string;
-          };
-        };
-      };
-      videoMessage?: {
-        caption?: string;
-        mimetype?: string;
-        url?: string;
-      };
-      audioMessage?: {
-        mimetype?: string;
-        url?: string;
-      };
-    };
+    message?: EvolutionMessageContent;
     base64?: string;
     messageTimestamp?: number;
     state?: "open" | "close" | "connecting";
@@ -96,7 +110,13 @@ export async function POST(req: NextRequest) {
       body.data?.key?.id ||
       `whk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    const msg = body.data?.message;
+    const rawMsg = body.data?.message;
+    const msg =
+      rawMsg?.ephemeralMessage?.message ||
+      rawMsg?.viewOnceMessage?.message ||
+      rawMsg?.viewOnceMessageV2?.message ||
+      rawMsg;
+
     const docMsg =
       msg?.documentMessage ||
       msg?.documentWithCaptionMessage?.message?.documentMessage;
@@ -123,7 +143,64 @@ export async function POST(req: NextRequest) {
       mimetype = msg.audioMessage.mimetype || "audio/ogg";
     }
 
-    const rawBase64 = msg?.base64 || body.data?.base64 || "";
+    let rawBase64 =
+      msg?.base64 || rawMsg?.base64 || body.data?.base64 || body.base64 || "";
+
+    // Se a Evolution API não enviou o base64 inline no webhook, buscamos diretamente via REST v2.3
+    if (mediaType && !rawBase64 && !fromMe && body.data?.key) {
+      const evoConfig = getWorkspaceEvolutionConfig();
+      const baseUrl = evoConfig?.baseUrl?.trim().replace(/\/+$/, "");
+      const apiKey = evoConfig?.apiKey?.trim();
+      const targetInstance = (
+        evoConfig?.instanceName ||
+        instance ||
+        ""
+      ).trim();
+
+      if (baseUrl && apiKey && targetInstance) {
+        try {
+          const mediaRes = await fetch(
+            `${baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(
+              targetInstance
+            )}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: apiKey,
+              },
+              body: JSON.stringify({
+                message: {
+                  key: body.data.key,
+                  message: body.data.message,
+                },
+                convertToMp4: false,
+              }),
+            }
+          );
+          if (mediaRes.ok) {
+            const mediaJson = (await mediaRes.json()) as {
+              base64?: string;
+              mimetype?: string;
+            };
+            if (mediaJson?.base64) {
+              rawBase64 = mediaJson.base64;
+              if (mediaJson.mimetype) {
+                mimetype = mediaJson.mimetype;
+              }
+            }
+          }
+        } catch {
+          // fallback below
+        }
+      }
+    }
+
+    if (mediaType === "image" && !rawBase64 && msg?.imageMessage?.jpegThumbnail) {
+      rawBase64 = msg.imageMessage.jpegThumbnail;
+      mimetype = "image/jpeg";
+    }
+
     const mediaUrl =
       mediaType && rawBase64
         ? rawBase64.startsWith("data:")
