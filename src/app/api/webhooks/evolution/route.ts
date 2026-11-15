@@ -7,9 +7,12 @@ import {
 interface EvolutionV23WebhookBody {
   event?: string;
   instance?: string;
+  sender?: string;
   data?: {
     key?: {
       remoteJid?: string;
+      remoteJidAlt?: string;
+      participant?: string;
       fromMe?: boolean;
       id?: string;
     };
@@ -31,6 +34,23 @@ interface EvolutionV23WebhookBody {
   };
 }
 
+function extractPhoneFromKey(
+  key?: EvolutionV23WebhookBody["data"] extends infer D
+    ? D extends { key?: infer K }
+      ? K
+      : never
+    : never
+): { phone: string; remoteJid: string } {
+  const jid = key?.remoteJid || "";
+  const alt = key?.remoteJidAlt || "";
+  const participant = key?.participant || "";
+
+  // Na Evolution API v2.3 / Baileys, contas com @lid trazem o número real em remoteJidAlt
+  const preferredJid = jid.endsWith("@lid") && alt ? alt : jid || alt || participant;
+  const phone = preferredJid.split("@")[0].replace(/\D/g, "");
+  return { phone, remoteJid: preferredJid };
+}
+
 /**
  * Endpoint oficial do CRM para escutar Webhooks da Evolution API v2.3 em tempo real:
  * POST /api/webhooks/evolution
@@ -41,7 +61,6 @@ export async function POST(req: NextRequest) {
 
     const eventType = (body.event || "messages.upsert").toLowerCase();
     const instance = body.instance || "nexus-comercial-01";
-    const remoteJid = body.data?.key?.remoteJid || "";
     const fromMe = Boolean(body.data?.key?.fromMe);
     const messageId =
       body.data?.key?.id ||
@@ -54,10 +73,12 @@ export async function POST(req: NextRequest) {
       body.data?.message?.videoMessage?.caption ||
       "";
 
-    const phone = remoteJid.split("@")[0].replace(/\D/g, "");
+    const { phone, remoteJid } = extractPhoneFromKey(body.data?.key);
 
     if (
-      (eventType === "messages.upsert" || eventType === "messages_upsert") &&
+      (eventType === "messages.upsert" ||
+        eventType === "messages_upsert" ||
+        eventType === "messages-upsert") &&
       !fromMe &&
       incomingText.trim() &&
       phone
@@ -81,6 +102,7 @@ export async function POST(req: NextRequest) {
         processedEvent: eventType,
         instance,
         contactJid: remoteJid || "unknown",
+        extractedPhone: phone || null,
         extractedMessage: incomingText || null,
       },
       { status: 200 }
@@ -99,12 +121,21 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const sinceParam = req.nextUrl.searchParams.get("since");
-  const since = sinceParam ? Number(sinceParam) : 0;
+  const recentParam = req.nextUrl.searchParams.get("recent");
 
-  if (!Number.isNaN(since) && since > 0) {
+  if (recentParam === "1") {
     return NextResponse.json({
       status: "online",
-      events: getWebhookMessagesSince(since),
+      events: getWebhookMessagesSince(0).slice(-15).reverse(),
+      serverTime: Date.now(),
+    });
+  }
+
+  if (sinceParam !== null) {
+    const since = Number(sinceParam);
+    return NextResponse.json({
+      status: "online",
+      events: getWebhookMessagesSince(Number.isNaN(since) ? 0 : since),
       serverTime: Date.now(),
     });
   }

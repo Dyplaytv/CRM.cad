@@ -8,7 +8,7 @@ import {
   PlugZap,
   Loader2,
 } from "lucide-react";
-import { INITIAL_DEALS, KANBAN_STAGES } from "@/data/mockData";
+import { INITIAL_DEALS, KANBAN_STAGES, SELLERS } from "@/data/mockData";
 import {
   AuthUser,
   ChatMessage,
@@ -148,9 +148,9 @@ export default function CRMWorkspacePage() {
   // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Master
   useEffect(() => {
     if (user?.mode !== "master") return;
-    let lastChecked = Date.now();
+    let lastChecked = 0;
 
-    const timer = setInterval(async () => {
+    const pollWebhooks = async () => {
       try {
         const res = await fetch(`/api/webhooks/evolution?since=${lastChecked}`);
         if (!res.ok) return;
@@ -158,6 +158,7 @@ export default function CRMWorkspacePage() {
           events?: Array<{
             id: string;
             phone: string;
+            pushName?: string;
             text: string;
             receivedAt: number;
           }>;
@@ -169,20 +170,25 @@ export default function CRMWorkspacePage() {
         const events = data.events || [];
         if (events.length === 0) return;
 
-        setDeals((prev) =>
-          prev.map((deal) => {
+        setDeals((prev) => {
+          const matchedEventIds = new Set<string>();
+
+          const updatedDeals = prev.map((deal) => {
             const dealDigits = deal.contactPhone.replace(/\D/g, "");
             if (dealDigits.length < 8) return deal;
             const suffix = dealDigits.slice(-8);
 
-            const matching = events.filter(
-              (ev) =>
-                ev.phone.endsWith(suffix) &&
-                !deal.messages.some((m) => m.id === ev.id)
-            );
+            const matching = events.filter((ev) => ev.phone.endsWith(suffix));
             if (matching.length === 0) return deal;
 
-            const newMsgs: ChatMessage[] = matching.map((ev) => ({
+            matching.forEach((ev) => matchedEventIds.add(ev.id));
+
+            const fresh = matching.filter(
+              (ev) => !deal.messages.some((m) => m.id === ev.id)
+            );
+            if (fresh.length === 0) return deal;
+
+            const newMsgs: ChatMessage[] = fresh.map((ev) => ({
               id: ev.id,
               sender: "client",
               text: ev.text,
@@ -206,11 +212,77 @@ export default function CRMWorkspacePage() {
                 ...deal.timeline,
               ],
             };
-          })
-        );
-      } catch {}
-    }, 4000);
+          });
 
+          // Cria automaticamente um novo Lead no Kanban se o número ainda não existir no funil
+          const unmatched = events.filter((ev) => !matchedEventIds.has(ev.id));
+          if (unmatched.length === 0) return updatedDeals;
+
+          const newLeadsMap = new Map<string, Deal>();
+          for (const ev of unmatched) {
+            const suffix = ev.phone.slice(-8);
+            const existingNew = newLeadsMap.get(suffix);
+            const msgObj: ChatMessage = {
+              id: ev.id,
+              sender: "client",
+              text: ev.text,
+              timestamp: new Date(ev.receivedAt).toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            };
+
+            if (existingNew) {
+              if (!existingNew.messages.some((m) => m.id === ev.id)) {
+                existingNew.messages.push(msgObj);
+              }
+            } else {
+              const displayName = ev.pushName || `+${ev.phone}`;
+              newLeadsMap.set(suffix, {
+                id: `wa-${suffix}-${Date.now()}`,
+                title: "Atendimento WhatsApp (Inbound)",
+                company: displayName,
+                contactName: displayName,
+                contactRole: "Lead WhatsApp",
+                contactEmail: "pendente@whatsapp.lead",
+                contactPhone: ev.phone.startsWith("+") ? ev.phone : `+${ev.phone}`,
+                cnpj: "A preencher",
+                city: "Brasil",
+                value: 0,
+                stage: "leads",
+                priority: "Alta",
+                stagnantDays: 0,
+                seller: SELLERS[0],
+                tags: ["WhatsApp", "Inbound"],
+                customFields: {
+                  origin: "WhatsApp Evolution API v2.3",
+                  segment: "A classificar",
+                  employees: "-",
+                  expectedClose: "A definir",
+                },
+                notes: `<p>Lead criado automaticamente ao receber mensagem via Evolution API v2.3.</p>`,
+                tasks: [],
+                messages: [msgObj],
+                timeline: [
+                  {
+                    id: `ev-${ev.id}`,
+                    title: "Lead criado via WhatsApp (Evolution API v2.3)",
+                    description: ev.text.slice(0, 70),
+                    timestamp: msgObj.timestamp,
+                    type: "whatsapp",
+                  },
+                ],
+              });
+            }
+          }
+
+          return [...Array.from(newLeadsMap.values()), ...updatedDeals];
+        });
+      } catch {}
+    };
+
+    pollWebhooks();
+    const timer = setInterval(pollWebhooks, 3500);
     return () => clearInterval(timer);
   }, [user?.mode]);
 
