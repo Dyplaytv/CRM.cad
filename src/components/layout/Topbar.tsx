@@ -70,8 +70,8 @@ export function Topbar({
       subtitle: "Cadastre logins e senhas e gerencie a equipe de atendimento",
     },
     integrations: {
-      title: "Integrações & Evolution API",
-      subtitle: "Gerencie instâncias WhatsApp, QR Code e Webhooks em tempo real",
+      title: "WhatsApp",
+      subtitle: "Conecte o WhatsApp da empresa via QR Code e acompanhe o status em tempo real",
     },
   };
 

@@ -88,7 +88,7 @@ export function Sidebar({
     },
     {
       id: "integrations",
-      label: "Evolution API",
+      label: "WhatsApp",
       icon: PlugZap,
       badge: evolutionStatus === "connected" ? "ON" : "OFF",
     },
