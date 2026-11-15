@@ -28,6 +28,7 @@ export function WhatsAppChat({
 }: WhatsAppChatProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [showApiInspector, setShowApiInspector] = useState(false);
   const [lastApiLog, setLastApiLog] = useState<{
     method: string;
@@ -55,7 +56,32 @@ export function WhatsAppChat({
 
     const currentText = text.trim();
     setText("");
+    setSendError(null);
     setSending(true);
+
+    const apiResult = await sendEvolutionTextMessage(evolutionConfig, {
+      number: deal.contactPhone,
+      text: currentText,
+    });
+
+    setLastApiLog({
+      method: "POST /message/sendText (v2.3)",
+      endpoint: apiResult.endpoint,
+      payload: {
+        number: deal.contactPhone.replace(/\D/g, ""),
+        text: currentText,
+      },
+      response: apiResult.response,
+    });
+
+    if (!apiResult.ok) {
+      setSendError(
+        apiResult.error || "Erro ao enviar mensagem via Evolution API v2.3."
+      );
+      setText(currentText);
+      setSending(false);
+      return;
+    }
 
     const now = new Date().toLocaleTimeString("pt-BR", {
       hour: "2-digit",
@@ -71,22 +97,6 @@ export function WhatsAppChat({
     };
 
     onAddMessage(deal.id, newMsg);
-
-    const apiResult = await sendEvolutionTextMessage(evolutionConfig, {
-      number: deal.contactPhone,
-      text: currentText,
-    });
-
-    setLastApiLog({
-      method: "POST /message/sendText",
-      endpoint: apiResult.endpoint,
-      payload: {
-        number: deal.contactPhone.replace(/\D/g, ""),
-        textMessage: { text: currentText },
-      },
-      response: apiResult.response,
-    });
-
     setSending(false);
   };
 
@@ -282,6 +292,11 @@ export function WhatsAppChat({
       </div>
 
       {/* Input Composer */}
+      {sendError && (
+        <div className="px-3 py-2 bg-rose-500/10 border-t border-rose-500/25 text-[11px] text-rose-600 dark:text-rose-400">
+          {sendError}
+        </div>
+      )}
       <form
         onSubmit={handleSendMessage}
         className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-2"

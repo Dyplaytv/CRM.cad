@@ -145,6 +145,75 @@ export default function CRMWorkspacePage() {
     }
   }, [evolutionConfig, user]);
 
+  // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Master
+  useEffect(() => {
+    if (user?.mode !== "master") return;
+    let lastChecked = Date.now();
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/webhooks/evolution?since=${lastChecked}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          events?: Array<{
+            id: string;
+            phone: string;
+            text: string;
+            receivedAt: number;
+          }>;
+          serverTime?: number;
+        };
+        if (data.serverTime) {
+          lastChecked = data.serverTime;
+        }
+        const events = data.events || [];
+        if (events.length === 0) return;
+
+        setDeals((prev) =>
+          prev.map((deal) => {
+            const dealDigits = deal.contactPhone.replace(/\D/g, "");
+            if (dealDigits.length < 8) return deal;
+            const suffix = dealDigits.slice(-8);
+
+            const matching = events.filter(
+              (ev) =>
+                ev.phone.endsWith(suffix) &&
+                !deal.messages.some((m) => m.id === ev.id)
+            );
+            if (matching.length === 0) return deal;
+
+            const newMsgs: ChatMessage[] = matching.map((ev) => ({
+              id: ev.id,
+              sender: "client",
+              text: ev.text,
+              timestamp: new Date(ev.receivedAt).toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            }));
+
+            return {
+              ...deal,
+              messages: [...deal.messages, ...newMsgs],
+              timeline: [
+                ...newMsgs.map((m) => ({
+                  id: `ev-${m.id}`,
+                  title: "Mensagem recebida via Evolution API v2.3",
+                  description: m.text.slice(0, 70),
+                  timestamp: m.timestamp,
+                  type: "whatsapp" as const,
+                })),
+                ...deal.timeline,
+              ],
+            };
+          })
+        );
+      } catch {}
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [user?.mode]);
+
   const handleLoginSuccess = (loggedUser: AuthUser) => {
     setUser(loggedUser);
     hydrateWorkspaceForUser(loggedUser);

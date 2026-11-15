@@ -28,8 +28,16 @@ export interface EvolutionWebhookPayload {
   };
 }
 
+function isDemoConfig(config: EvolutionConfig): boolean {
+  return (
+    !config.baseUrl?.trim() ||
+    config.baseUrl.includes("sua-evolution-api.com") ||
+    !config.apiKey?.trim()
+  );
+}
+
 /**
- * Envia mensagem de texto diretamente do CRM para o endpoint oficial da Evolution API v2:
+ * Envia mensagem de texto diretamente do CRM para a Evolution API v2.3:
  * POST {baseUrl}/message/sendText/{instanceName}
  */
 export async function sendEvolutionTextMessage(
@@ -40,54 +48,46 @@ export async function sendEvolutionTextMessage(
   simulated: boolean;
   endpoint: string;
   response: Record<string, unknown>;
+  error?: string;
 }> {
   const cleanNumber = payload.number.replace(/\D/g, "");
-  const endpoint = `${config.baseUrl.replace(/\/$/, "")}/message/sendText/${config.instanceName}`;
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/message/sendText/${config.instanceName}`;
 
-  const requestBody = {
-    number: cleanNumber,
-    options: {
-      delay: payload.delay ?? 1200,
-      presence: "composing",
-      linkPreview: payload.linkPreview ?? true,
-    },
-    textMessage: {
-      text: payload.text,
-    },
-  };
-
-  // Caso o usuário configure uma URL real e queira disparar de verdade, tentamos o fetch com fallback gracioso para simulação:
-  try {
-    if (
-      config.baseUrl &&
-      !config.baseUrl.includes("sua-evolution-api.com") &&
-      config.apiKey.length > 8
-    ) {
-      const res = await fetch(endpoint, {
+  if (!isDemoConfig(config)) {
+    try {
+      const res = await fetch("/api/evolution", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: config.apiKey,
-        },
-        body: JSON.stringify(requestBody),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sendText",
+          config,
+          payload,
+        }),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        return {
-          ok: true,
-          simulated: false,
-          endpoint,
-          response: data,
-        };
-      }
+      const json = await res.json();
+      return {
+        ok: Boolean(json.ok),
+        simulated: false,
+        endpoint: json.endpoint || endpoint,
+        response: json.data || json,
+        error: json.error,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        simulated: false,
+        endpoint,
+        response: {},
+        error:
+          err instanceof Error
+            ? err.message
+            : "Erro de rede ao enviar para Evolution API v2.3.",
+      };
     }
-  } catch {
-    // Fallback automático para modo simulado caso o servidor Evolution não esteja acessível na rede local
   }
 
-  // Retorno estruturado fiel ao padrão Evolution API v2
-  await new Promise((r) => setTimeout(r, 380));
+  // Modo simulado (DEMO)
+  await new Promise((r) => setTimeout(r, 350));
   return {
     ok: true,
     simulated: true,
@@ -99,9 +99,7 @@ export async function sendEvolutionTextMessage(
         id: `BAE5${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
       },
       message: {
-        extendedTextMessage: {
-          text: payload.text,
-        },
+        conversation: payload.text,
       },
       messageTimestamp: Math.floor(Date.now() / 1000),
       status: "PENDING",
@@ -110,48 +108,168 @@ export async function sendEvolutionTextMessage(
 }
 
 /**
- * Consulta QR Code e estado da instância na Evolution API:
+ * Consulta QR Code (base64 + pairingCode) na Evolution API v2.3:
  * GET {baseUrl}/instance/connect/{instanceName}
  */
 export async function fetchEvolutionQrCode(config: EvolutionConfig): Promise<{
+  ok: boolean;
+  simulated: boolean;
   endpoint: string;
   pairingCode: string;
   code: string;
+  base64?: string;
   count: number;
+  error?: string;
 }> {
-  const endpoint = `${config.baseUrl.replace(/\/$/, "")}/instance/connect/${config.instanceName}`;
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/instance/connect/${config.instanceName}`;
 
-  try {
-    if (
-      config.baseUrl &&
-      !config.baseUrl.includes("sua-evolution-api.com") &&
-      config.apiKey.length > 8
-    ) {
-      const res = await fetch(endpoint, {
-        method: "GET",
-        headers: {
-          apikey: config.apiKey,
-        },
+  if (!isDemoConfig(config)) {
+    try {
+      const res = await fetch("/api/evolution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "connect",
+          config,
+        }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        return {
-          endpoint,
-          pairingCode: data.pairingCode || "WZ9X-84KL",
-          code: data.code || "2@evolution_qr_token_nexus_crm",
-          count: data.count || 1,
-        };
-      }
+      const json = await res.json();
+      const data = json.data || {};
+      return {
+        ok: Boolean(json.ok),
+        simulated: false,
+        endpoint: json.endpoint || endpoint,
+        pairingCode: data.pairingCode || "AGUARDANDO",
+        code: data.code || "",
+        base64: data.base64,
+        count: data.count || 1,
+        error: json.error,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        simulated: false,
+        endpoint,
+        pairingCode: "ERRO",
+        code: "",
+        count: 0,
+        error:
+          err instanceof Error
+            ? err.message
+            : "Erro ao consultar QR Code na Evolution API v2.3.",
+      };
     }
-  } catch {
-    // Fallback para simulação visual imediata
   }
 
-  await new Promise((r) => setTimeout(r, 450));
+  await new Promise((r) => setTimeout(r, 400));
   return {
+    ok: true,
+    simulated: true,
     endpoint,
     pairingCode: "NXS8-92BR",
-    code: `2@${Math.random().toString(36).substring(2, 15)},NexusCRM_EvolutionAPI_v2`,
+    code: `2@${Math.random().toString(36).substring(2, 15)},NexusCRM_EvolutionAPI_v2.3`,
     count: 1,
   };
+}
+
+/**
+ * Verifica estado da instância na Evolution API v2.3:
+ * GET {baseUrl}/instance/connectionState/{instanceName}
+ */
+export async function checkEvolutionStatus(config: EvolutionConfig): Promise<{
+  ok: boolean;
+  state: "connected" | "disconnected" | "connecting";
+  raw?: unknown;
+  error?: string;
+}> {
+  if (isDemoConfig(config)) {
+    return { ok: true, state: config.status };
+  }
+
+  try {
+    const res = await fetch("/api/evolution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status", config }),
+    });
+    const json = await res.json();
+    const rawState = (
+      json?.data?.instance?.state ||
+      json?.data?.state ||
+      ""
+    ).toLowerCase();
+
+    const mappedState: "connected" | "disconnected" | "connecting" =
+      rawState === "open"
+        ? "connected"
+        : rawState === "connecting"
+        ? "connecting"
+        : "disconnected";
+
+    return {
+      ok: Boolean(json.ok),
+      state: mappedState,
+      raw: json.data,
+      error: json.error,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      state: "disconnected",
+      error: err instanceof Error ? err.message : "Erro ao verificar status.",
+    };
+  }
+}
+
+/**
+ * Registra automaticamente o Webhook do CRM na Evolution API v2.3:
+ * POST {baseUrl}/webhook/set/{instanceName}
+ */
+export async function configureEvolutionWebhook(
+  config: EvolutionConfig
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  if (isDemoConfig(config)) {
+    return { ok: true, data: { simulated: true, webhook: config.webhookUrl } };
+  }
+
+  try {
+    const res = await fetch("/api/evolution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setWebhook", config }),
+    });
+    const json = await res.json();
+    return { ok: Boolean(json.ok), data: json.data, error: json.error };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Erro ao configurar webhook.",
+    };
+  }
+}
+
+/**
+ * Desconecta a instância na Evolution API v2.3:
+ * DELETE {baseUrl}/instance/logout/{instanceName}
+ */
+export async function logoutEvolutionInstance(
+  config: EvolutionConfig
+): Promise<{ ok: boolean; error?: string }> {
+  if (isDemoConfig(config)) {
+    return { ok: true };
+  }
+  try {
+    const res = await fetch("/api/evolution", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "logout", config }),
+    });
+    const json = await res.json();
+    return { ok: Boolean(json.ok), error: json.error };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Erro ao desconectar.",
+    };
+  }
 }
