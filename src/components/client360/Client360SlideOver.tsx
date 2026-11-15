@@ -125,7 +125,8 @@ export function Client360SlideOver({
         expectedClose: deal.customFields.expectedClose,
       });
     }
-  }, [deal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.id]);
 
   useEffect(() => {
     setActiveTab(initialTab);

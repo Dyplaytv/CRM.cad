@@ -42,10 +42,17 @@ export function Topbar({
   const [showNotifications, setShowNotifications] = useState(false);
 
   const tabTitles: Record<NavTab, { title: string; subtitle: string }> = {
-    dashboard: {
-      title: "Dashboard Executivo",
-      subtitle: "Métricas em tempo real, forecast e prioridades do dia",
-    },
+    dashboard:
+      user.mode === "agent"
+        ? {
+            title: "Meu Dashboard de Atendimento",
+            subtitle:
+              "Resumo dos seus leads, métricas e próximas tarefas agendadas",
+          }
+        : {
+            title: "Dashboard Executivo",
+            subtitle: "Métricas em tempo real, forecast e prioridades do dia",
+          },
     pipeline: {
       title: "Pipeline de Vendas",
       subtitle: "Arraste negócios entre etapas ou clique para abrir a Visão 360º",
@@ -72,7 +79,13 @@ export function Topbar({
           <button
             onClick={() => {
               if (user.mode === "agent") {
-                setActiveTab(activeTab === "pipeline" ? "contacts" : "pipeline");
+                setActiveTab(
+                  activeTab === "dashboard"
+                    ? "pipeline"
+                    : activeTab === "pipeline"
+                    ? "contacts"
+                    : "dashboard"
+                );
                 return;
               }
               setActiveTab(

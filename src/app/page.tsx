@@ -71,7 +71,7 @@ export default function CRMWorkspacePage() {
   const hydrateWorkspaceForUser = useCallback(async (loggedUser: AuthUser) => {
     setSelectedDealId(null);
     setWorkspaceLoaded(false);
-    setActiveTab(loggedUser.mode === "agent" ? "pipeline" : "dashboard");
+    setActiveTab("dashboard");
 
     if (loggedUser.mode === "demo") {
       setAgents([]);
@@ -694,7 +694,7 @@ export default function CRMWorkspacePage() {
         />
 
         <main className="flex-1 overflow-y-auto px-4 lg:px-8 pt-6 pb-20 md:pb-6">
-          {activeTab === "dashboard" && user.mode !== "agent" && (
+          {activeTab === "dashboard" && (
             <SalesDashboard
               deals={deals}
               isDemo={user.mode === "demo"}
@@ -750,19 +750,17 @@ export default function CRMWorkspacePage() {
 
         {/* Simplified Mobile Bottom Navigation Bar */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 h-16 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-around px-2">
-          {user.mode !== "agent" && (
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-                activeTab === "dashboard"
-                  ? "text-indigo-600 dark:text-indigo-400"
-                  : "text-zinc-500"
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>Dashboard</span>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab("dashboard")}
+            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+              activeTab === "dashboard"
+                ? "text-indigo-600 dark:text-indigo-400"
+                : "text-zinc-500"
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Dashboard</span>
+          </button>
           <button
             onClick={() => setActiveTab("pipeline")}
             className={`flex flex-col items-center gap-1 text-[10px] font-medium ${

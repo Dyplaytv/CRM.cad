@@ -86,7 +86,11 @@ export function Sidebar({
 
   const navItems = allNavItems.filter((item) => {
     if (userMode === "agent") {
-      return item.id === "pipeline" || item.id === "contacts";
+      return (
+        item.id === "dashboard" ||
+        item.id === "pipeline" ||
+        item.id === "contacts"
+      );
     }
     if (userMode === "demo") {
       return item.id !== "agents";
