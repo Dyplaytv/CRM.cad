@@ -12,7 +12,7 @@ import {
   Sparkles,
   ArrowRightLeft,
 } from "lucide-react";
-import { Deal, Priority, StageId } from "@/types/crm";
+import { AgentAccount, Deal, Priority, StageId } from "@/types/crm";
 import { KANBAN_STAGES } from "@/data/mockData";
 
 interface KanbanBoardProps {
@@ -20,6 +20,8 @@ interface KanbanBoardProps {
   onMoveDeal: (dealId: string, targetStage: StageId) => void;
   onSelectDeal: (deal: Deal, defaultTab?: "notes" | "tasks" | "whatsapp") => void;
   onNewDealInStage: (stage: StageId) => void;
+  agents?: AgentAccount[];
+  onAssignAgent?: (dealId: string, sellerId: string) => void;
 }
 
 export function KanbanBoard({
@@ -27,6 +29,8 @@ export function KanbanBoard({
   onMoveDeal,
   onSelectDeal,
   onNewDealInStage,
+  agents = [],
+  onAssignAgent,
 }: KanbanBoardProps) {
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<StageId | null>(null);
@@ -270,16 +274,49 @@ export function KanbanBoard({
 
                       {/* Footer: Seller Avatar & Quick WhatsApp Trigger */}
                       <div className="mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className={`w-6 h-6 rounded-full bg-gradient-to-tr ${deal.seller.color} text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-zinc-900`}
+                            className={`w-6 h-6 rounded-full bg-gradient-to-tr ${deal.seller.color} text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-zinc-900 shrink-0`}
                             title={`Responsável: ${deal.seller.name}`}
                           >
                             {deal.seller.initials}
                           </div>
-                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate max-w-[115px]">
-                            {deal.seller.name}
-                          </span>
+                          {onAssignAgent && agents.length > 0 ? (
+                            <select
+                              value={
+                                agents.some((a) => a.id === deal.seller.id)
+                                  ? deal.seller.id
+                                  : "master-admin"
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                onAssignAgent(deal.id, e.target.value);
+                              }}
+                              title="Mudar atendente responsável"
+                              className="text-[11px] bg-transparent text-zinc-600 dark:text-zinc-300 border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 rounded-md px-1 py-0.5 max-w-[120px] truncate focus:outline-none focus:border-indigo-500 cursor-pointer"
+                            >
+                              <option
+                                value="master-admin"
+                                className="bg-white dark:bg-zinc-900"
+                              >
+                                Master Admin
+                              </option>
+                              {agents.map((agent) => (
+                                <option
+                                  key={agent.id}
+                                  value={agent.id}
+                                  className="bg-white dark:bg-zinc-900"
+                                >
+                                  {agent.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate max-w-[115px]">
+                              {deal.seller.name}
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1">

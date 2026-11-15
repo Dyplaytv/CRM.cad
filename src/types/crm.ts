@@ -106,5 +106,17 @@ export interface AuthUser {
   name: string;
   role: string;
   initials: string;
-  mode: "demo" | "master";
+  mode: "demo" | "master" | "agent";
+  agentId?: string;
+  color?: string;
+}
+
+export interface AgentAccount {
+  id: string;
+  name: string;
+  username: string;
+  initials: string;
+  color: string;
+  active: boolean;
+  createdAt: string;
 }

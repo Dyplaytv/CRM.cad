@@ -28,6 +28,7 @@ import {
   Calendar,
 } from "lucide-react";
 import {
+  AgentAccount,
   ChatMessage,
   Deal,
   DealTask,
@@ -51,6 +52,8 @@ interface Client360SlideOverProps {
   evolutionConfig: EvolutionConfig;
   onUpdateStage: (dealId: string, stage: StageId) => void;
   onUpdateDeal: (dealId: string, patch: Partial<Deal>) => void;
+  agents?: AgentAccount[];
+  onAssignAgent?: (dealId: string, sellerId: string) => void;
   onSaveNotes: (dealId: string, htmlNotes: string) => void;
   onToggleTask: (dealId: string, taskId: string) => void;
   onAddTask: (dealId: string, task: DealTask) => void;
@@ -65,6 +68,8 @@ export function Client360SlideOver({
   evolutionConfig,
   onUpdateStage,
   onUpdateDeal,
+  agents = [],
+  onAssignAgent,
   onSaveNotes,
   onToggleTask,
   onAddTask,
@@ -249,6 +254,26 @@ export function Client360SlideOver({
                     </option>
                   ))}
                 </select>
+
+                {onAssignAgent && (
+                  <select
+                    value={
+                      agents.some((a) => a.id === deal.seller.id)
+                        ? deal.seller.id
+                        : "master-admin"
+                    }
+                    onChange={(e) => onAssignAgent(deal.id, e.target.value)}
+                    title="Transferir conversa para atendente"
+                    className="rounded-xl px-3 py-1.5 text-xs font-medium bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/70 text-indigo-700 dark:text-indigo-300 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="master-admin">Atendente: Admin</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        Atendente: {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 <div className="text-right hidden sm:block">
                   <p className="text-[10px] text-zinc-400 uppercase">

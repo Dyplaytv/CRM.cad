@@ -10,11 +10,13 @@ import {
 } from "lucide-react";
 import { INITIAL_DEALS, KANBAN_STAGES, SELLERS } from "@/data/mockData";
 import {
+  AgentAccount,
   AuthUser,
   ChatMessage,
   Deal,
   DealTask,
   EvolutionConfig,
+  Seller,
   StageId,
 } from "@/types/crm";
 import { Sidebar, NavTab } from "@/components/layout/Sidebar";
@@ -26,6 +28,7 @@ import { NewDealModal } from "@/components/pipeline/NewDealModal";
 import { Client360SlideOver } from "@/components/client360/Client360SlideOver";
 import { ContactsDirectory } from "@/components/client360/ContactsDirectory";
 import { EvolutionSettings } from "@/components/integrations/EvolutionSettings";
+import { AgentsManager } from "@/components/agents/AgentsManager";
 import { LoginScreen } from "@/components/auth/LoginScreen";
 
 const DEMO_EVOLUTION_CONFIG: EvolutionConfig = {
@@ -62,12 +65,16 @@ export default function CRMWorkspacePage() {
   const [evolutionConfig, setEvolutionConfig] = useState<EvolutionConfig>(
     DEMO_EVOLUTION_CONFIG
   );
+  const [agents, setAgents] = useState<AgentAccount[]>([]);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
-  const hydrateWorkspaceForUser = useCallback((loggedUser: AuthUser) => {
+  const hydrateWorkspaceForUser = useCallback(async (loggedUser: AuthUser) => {
     setSelectedDealId(null);
-    setActiveTab("dashboard");
+    setWorkspaceLoaded(false);
+    setActiveTab(loggedUser.mode === "agent" ? "pipeline" : "dashboard");
 
     if (loggedUser.mode === "demo") {
+      setAgents([]);
       setDeals(INITIAL_DEALS);
       setEvolutionConfig({
         ...DEMO_EVOLUTION_CONFIG,
@@ -76,31 +83,92 @@ export default function CRMWorkspacePage() {
             ? `${window.location.origin}/api/webhooks/evolution`
             : DEMO_EVOLUTION_CONFIG.webhookUrl,
       });
+      setWorkspaceLoaded(true);
       return;
     }
 
-    // Conta Real (Master Admin07) - carrega dados persistidos localmente
-    try {
-      const savedDeals = localStorage.getItem(MASTER_DEALS_KEY);
-      setDeals(savedDeals ? (JSON.parse(savedDeals) as Deal[]) : []);
+    const defaultMasterEvo: EvolutionConfig = {
+      baseUrl: "",
+      apiKey: "",
+      instanceName: "nexus-master-01",
+      webhookUrl:
+        typeof window !== "undefined"
+          ? `${window.location.origin}/api/webhooks/evolution`
+          : "https://crm.cadtech.com.br/api/webhooks/evolution",
+      status: "disconnected",
+    };
 
-      const savedEvo = localStorage.getItem(MASTER_EVOLUTION_KEY);
-      if (savedEvo) {
-        setEvolutionConfig(JSON.parse(savedEvo) as EvolutionConfig);
+    try {
+      const [wsRes, agentsRes] = await Promise.all([
+        fetch("/api/workspace"),
+        loggedUser.mode === "master"
+          ? fetch("/api/agents")
+          : Promise.resolve(null),
+      ]);
+
+      if (agentsRes && agentsRes.ok) {
+        const agentsData = (await agentsRes.json()) as {
+          agents?: AgentAccount[];
+        };
+        if (Array.isArray(agentsData.agents)) {
+          setAgents(agentsData.agents);
+        }
       } else {
-        setEvolutionConfig({
-          baseUrl: "",
-          apiKey: "",
-          instanceName: "nexus-master-01",
-          webhookUrl:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/webhooks/evolution`
-              : "https://crm.cadtech.com.br/api/webhooks/evolution",
-          status: "disconnected",
-        });
+        setAgents([]);
+      }
+
+      if (wsRes.ok) {
+        const wsData = (await wsRes.json()) as {
+          deals?: Deal[];
+          evolutionConfig?: EvolutionConfig | null;
+        };
+
+        let serverDeals = Array.isArray(wsData.deals) ? wsData.deals : [];
+        let serverEvo = wsData.evolutionConfig || null;
+
+        // Migra dados locais do Master para o servidor se o servidor ainda estiver vazio
+        if (loggedUser.mode === "master") {
+          const savedDealsRaw = localStorage.getItem(MASTER_DEALS_KEY);
+          const localDeals = savedDealsRaw
+            ? (JSON.parse(savedDealsRaw) as Deal[])
+            : [];
+          const savedEvoRaw = localStorage.getItem(MASTER_EVOLUTION_KEY);
+          const localEvo = savedEvoRaw
+            ? (JSON.parse(savedEvoRaw) as EvolutionConfig)
+            : null;
+
+          if (serverDeals.length === 0 && localDeals.length > 0) {
+            serverDeals = localDeals;
+            serverEvo = serverEvo || localEvo || defaultMasterEvo;
+            await fetch("/api/workspace", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                deals: serverDeals,
+                evolutionConfig: serverEvo,
+              }),
+            });
+          } else if (!serverEvo && localEvo) {
+            serverEvo = localEvo;
+            await fetch("/api/workspace", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ evolutionConfig: serverEvo }),
+            });
+          }
+        }
+
+        setDeals(serverDeals);
+        setEvolutionConfig(serverEvo || defaultMasterEvo);
+      } else {
+        setDeals([]);
+        setEvolutionConfig(defaultMasterEvo);
       }
     } catch {
       setDeals([]);
+      setEvolutionConfig(defaultMasterEvo);
+    } finally {
+      setWorkspaceLoaded(true);
     }
   }, []);
 
@@ -125,25 +193,58 @@ export default function CRMWorkspacePage() {
     };
   }, [hydrateWorkspaceForUser]);
 
-  // Persistir alterações da conta Master no localStorage
+  // Persistir alterações da conta Master no localStorage e no servidor
   useEffect(() => {
-    if (user?.mode === "master") {
+    if (user?.mode === "master" && workspaceLoaded) {
       try {
         localStorage.setItem(MASTER_DEALS_KEY, JSON.stringify(deals));
       } catch {}
+      fetch("/api/workspace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deals }),
+      }).catch(() => {});
     }
-  }, [deals, user]);
+  }, [deals, user, workspaceLoaded]);
 
   useEffect(() => {
-    if (user?.mode === "master") {
+    if (user?.mode === "master" && workspaceLoaded) {
       try {
         localStorage.setItem(
           MASTER_EVOLUTION_KEY,
           JSON.stringify(evolutionConfig)
         );
       } catch {}
+      fetch("/api/workspace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evolutionConfig }),
+      }).catch(() => {});
     }
-  }, [evolutionConfig, user]);
+  }, [evolutionConfig, user, workspaceLoaded]);
+
+  // Sincronização em tempo real para o Atendente (recebe conversas transferidas e novas mensagens)
+  useEffect(() => {
+    if (user?.mode !== "agent") return;
+    const syncAgentWorkspace = async () => {
+      try {
+        const res = await fetch("/api/workspace");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          deals?: Deal[];
+          evolutionConfig?: EvolutionConfig | null;
+        };
+        if (Array.isArray(data.deals)) {
+          setDeals(data.deals);
+        }
+        if (data.evolutionConfig) {
+          setEvolutionConfig(data.evolutionConfig);
+        }
+      } catch {}
+    };
+    const interval = setInterval(syncAgentWorkspace, 4000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Master
   useEffect(() => {
@@ -327,6 +428,106 @@ export default function CRMWorkspacePage() {
 
   const selectedDeal = deals.find((d) => d.id === selectedDealId) || null;
 
+  const syncAgentDealToServer = (updatedDeal: Deal) => {
+    if (user?.mode !== "agent") return;
+    fetch("/api/workspace", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deal: updatedDeal }),
+    }).catch(() => {});
+  };
+
+  const updateDealById = (
+    dealId: string,
+    updater: (deal: Deal) => Deal
+  ) => {
+    setDeals((prev) =>
+      prev.map((d) => {
+        if (d.id !== dealId) return d;
+        const next = updater(d);
+        if (next !== d) syncAgentDealToServer(next);
+        return next;
+      })
+    );
+  };
+
+  const handleCreateAgent = async (input: {
+    name: string;
+    username: string;
+    password: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        agent?: AgentAccount;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.agent) {
+        return { ok: false, error: data.error || "Erro ao criar atendente." };
+      }
+      setAgents((prev) => [...prev, data.agent!]);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão com o servidor." };
+    }
+  };
+
+  const handleDeleteAgent = async (id: string) => {
+    try {
+      const res = await fetch(`/api/agents?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setAgents((prev) => prev.filter((a) => a.id !== id));
+      }
+    } catch {}
+  };
+
+  const handleAssignAgent = (dealId: string, sellerId: string) => {
+    let nextSeller: Seller;
+    if (sellerId === "master-admin") {
+      nextSeller = {
+        id: "master-admin",
+        name: "Master Admin",
+        role: "Master Admin",
+        avatar: "",
+        initials: "MA",
+        color: "from-emerald-600 to-teal-500",
+      };
+    } else {
+      const agent = agents.find((a) => a.id === sellerId);
+      if (!agent) return;
+      nextSeller = {
+        id: agent.id,
+        name: agent.name,
+        role: "Atendente",
+        avatar: "",
+        initials: agent.initials,
+        color: agent.color,
+      };
+    }
+
+    updateDealById(dealId, (d) => ({
+      ...d,
+      seller: nextSeller,
+      timeline: [
+        {
+          id: `ev-assign-${Date.now()}`,
+          title: `Atendimento transferido para ${nextSeller.name}`,
+          description: "Alteração de responsável pelo Admin",
+          timestamp: "Agora mesmo",
+          type: "stage",
+        },
+        ...d.timeline,
+      ],
+    }));
+  };
+
   const handleOpenDeal360 = (
     deal: Deal,
     defaultTab: "notes" | "tasks" | "whatsapp" = "whatsapp"
@@ -340,102 +541,95 @@ export default function CRMWorkspacePage() {
     const stageTitle =
       KANBAN_STAGES.find((s) => s.id === targetStage)?.title || targetStage;
 
-    setDeals((prev) =>
-      prev.map((d) => {
-        if (d.id !== dealId || d.stage === targetStage) return d;
-        return {
-          ...d,
-          stage: targetStage,
-          stagnantDays: 0,
-          timeline: [
-            {
-              id: `ev-${Date.now()}`,
-              title: `Movido para ${stageTitle}`,
-              description: "Atualizado no Funil Kanban",
-              timestamp: "Agora mesmo",
-              type: "stage",
-            },
-            ...d.timeline,
-          ],
-        };
-      })
-    );
+    updateDealById(dealId, (d) => {
+      if (d.stage === targetStage) return d;
+      return {
+        ...d,
+        stage: targetStage,
+        stagnantDays: 0,
+        timeline: [
+          {
+            id: `ev-${Date.now()}`,
+            title: `Movido para ${stageTitle}`,
+            description: "Atualizado no Funil Kanban",
+            timestamp: "Agora mesmo",
+            type: "stage",
+          },
+          ...d.timeline,
+        ],
+      };
+    });
   };
 
   const handleToggleTask = (dealId: string, taskId: string) => {
-    setDeals((prev) =>
-      prev.map((d) => {
-        if (d.id !== dealId) return d;
-        return {
-          ...d,
-          tasks: d.tasks.map((t) =>
-            t.id === taskId ? { ...t, completed: !t.completed } : t
-          ),
-        };
-      })
-    );
+    updateDealById(dealId, (d) => ({
+      ...d,
+      tasks: d.tasks.map((t) =>
+        t.id === taskId ? { ...t, completed: !t.completed } : t
+      ),
+    }));
   };
 
   const handleAddTask = (dealId: string, newTask: DealTask) => {
-    setDeals((prev) =>
-      prev.map((d) =>
-        d.id === dealId ? { ...d, tasks: [newTask, ...d.tasks] } : d
-      )
-    );
+    updateDealById(dealId, (d) => ({
+      ...d,
+      tasks: [newTask, ...d.tasks],
+    }));
   };
 
   const handleSaveNotes = (dealId: string, htmlNotes: string) => {
-    setDeals((prev) =>
-      prev.map((d) => (d.id === dealId ? { ...d, notes: htmlNotes } : d))
-    );
+    updateDealById(dealId, (d) => ({ ...d, notes: htmlNotes }));
   };
 
   const handleAddTag = (dealId: string, tag: string) => {
-    setDeals((prev) =>
-      prev.map((d) =>
-        d.id === dealId && !d.tags.includes(tag)
-          ? { ...d, tags: [...d.tags, tag] }
-          : d
-      )
+    updateDealById(dealId, (d) =>
+      d.tags.includes(tag) ? d : { ...d, tags: [...d.tags, tag] }
     );
   };
 
   const handleAddMessage = (dealId: string, msg: ChatMessage) => {
-    setDeals((prev) =>
-      prev.map((d) =>
-        d.id === dealId
-          ? {
-              ...d,
-              messages: [...d.messages, msg],
-              timeline: [
-                {
-                  id: `ev-msg-${Date.now()}`,
-                  title:
-                    msg.sender === "me"
-                      ? "Mensagem enviada via Evolution API"
-                      : "Webhook WhatsApp recebido",
-                  description: msg.text.slice(0, 70),
-                  timestamp: msg.timestamp,
-                  type: "whatsapp",
-                },
-                ...d.timeline,
-              ],
-            }
-          : d
-      )
-    );
+    updateDealById(dealId, (d) => ({
+      ...d,
+      messages: [...d.messages, msg],
+      timeline: [
+        {
+          id: `ev-msg-${Date.now()}`,
+          title:
+            msg.sender === "me"
+              ? "Mensagem enviada via Evolution API"
+              : "Webhook WhatsApp recebido",
+          description: msg.text.slice(0, 70),
+          timestamp: msg.timestamp,
+          type: "whatsapp",
+        },
+        ...d.timeline,
+      ],
+    }));
   };
 
   const handleCreateNewDeal = (newDeal: Deal) => {
-    setDeals((prev) => [newDeal, ...prev]);
-    setSelectedDealId(newDeal.id);
+    const dealWithOwner: Deal =
+      user?.mode === "agent" && user.agentId
+        ? {
+            ...newDeal,
+            seller: {
+              id: user.agentId,
+              name: user.name,
+              role: "Atendente",
+              avatar: "",
+              initials: user.initials,
+              color: user.color || "from-sky-500 to-indigo-500",
+            },
+          }
+        : newDeal;
+    setDeals((prev) => [dealWithOwner, ...prev]);
+    syncAgentDealToServer(dealWithOwner);
+    setSelectedDealId(dealWithOwner.id);
     setSlideOverTab("whatsapp");
   };
 
   const handleUpdateDeal = (dealId: string, patch: Partial<Deal>) => {
-    setDeals((prev) =>
-      prev.map((d) => (d.id === dealId ? { ...d, ...patch } : d))
-    );
+    updateDealById(dealId, (d) => ({ ...d, ...patch }));
   };
 
   const stagnantCount = deals.filter(
@@ -478,6 +672,8 @@ export default function CRMWorkspacePage() {
         onOpenCommand={() => setCommandOpen(true)}
         evolutionStatus={evolutionConfig.status}
         dealsCount={deals.length}
+        userMode={user.mode}
+        agentsCount={agents.length}
       />
 
       {/* Main Content Area */}
@@ -498,7 +694,7 @@ export default function CRMWorkspacePage() {
         />
 
         <main className="flex-1 overflow-y-auto px-4 lg:px-8 pt-6 pb-20 md:pb-6">
-          {activeTab === "dashboard" && (
+          {activeTab === "dashboard" && user.mode !== "agent" && (
             <SalesDashboard
               deals={deals}
               isDemo={user.mode === "demo"}
@@ -519,6 +715,10 @@ export default function CRMWorkspacePage() {
                 setNewDealDefaultStage(stageId);
                 setNewDealModalOpen(true);
               }}
+              agents={user.mode === "master" ? agents : []}
+              onAssignAgent={
+                user.mode === "master" ? handleAssignAgent : undefined
+              }
             />
           )}
 
@@ -531,7 +731,16 @@ export default function CRMWorkspacePage() {
             />
           )}
 
-          {activeTab === "integrations" && (
+          {activeTab === "agents" && user.mode === "master" && (
+            <AgentsManager
+              agents={agents}
+              deals={deals}
+              onCreateAgent={handleCreateAgent}
+              onDeleteAgent={handleDeleteAgent}
+            />
+          )}
+
+          {activeTab === "integrations" && user.mode !== "agent" && (
             <EvolutionSettings
               config={evolutionConfig}
               onUpdateConfig={setEvolutionConfig}
@@ -541,17 +750,19 @@ export default function CRMWorkspacePage() {
 
         {/* Simplified Mobile Bottom Navigation Bar */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 h-16 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-around px-2">
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-              activeTab === "dashboard"
-                ? "text-indigo-600 dark:text-indigo-400"
-                : "text-zinc-500"
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard</span>
-          </button>
+          {user.mode !== "agent" && (
+            <button
+              onClick={() => setActiveTab("dashboard")}
+              className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+                activeTab === "dashboard"
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-zinc-500"
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Dashboard</span>
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("pipeline")}
             className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
@@ -574,17 +785,19 @@ export default function CRMWorkspacePage() {
             <Users2 className="w-4 h-4" />
             <span>Clientes 360º</span>
           </button>
-          <button
-            onClick={() => setActiveTab("integrations")}
-            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-              activeTab === "integrations"
-                ? "text-indigo-600 dark:text-indigo-400"
-                : "text-zinc-500"
-            }`}
-          >
-            <PlugZap className="w-4 h-4" />
-            <span>WhatsApp API</span>
-          </button>
+          {user.mode !== "agent" && (
+            <button
+              onClick={() => setActiveTab("integrations")}
+              className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+                activeTab === "integrations"
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-zinc-500"
+              }`}
+            >
+              <PlugZap className="w-4 h-4" />
+              <span>WhatsApp API</span>
+            </button>
+          )}
         </nav>
       </div>
 
@@ -596,6 +809,8 @@ export default function CRMWorkspacePage() {
         evolutionConfig={evolutionConfig}
         onUpdateStage={handleMoveDeal}
         onUpdateDeal={handleUpdateDeal}
+        agents={user.mode === "master" ? agents : []}
+        onAssignAgent={user.mode === "master" ? handleAssignAgent : undefined}
         onSaveNotes={handleSaveNotes}
         onToggleTask={handleToggleTask}
         onAddTask={handleAddTask}

@@ -54,6 +54,10 @@ export function Topbar({
       title: "Visão 360º de Contas",
       subtitle: "Base unificada de clientes, decisores e histórico omnichannel",
     },
+    agents: {
+      title: "Gestão de Atendentes",
+      subtitle: "Cadastre logins e senhas e gerencie a equipe de atendimento",
+    },
     integrations: {
       title: "Integrações & Evolution API",
       subtitle: "Gerencie instâncias WhatsApp, QR Code e Webhooks em tempo real",
@@ -66,15 +70,19 @@ export function Topbar({
       <div className="flex items-center gap-3">
         <div className="md:hidden flex items-center gap-1">
           <button
-            onClick={() =>
+            onClick={() => {
+              if (user.mode === "agent") {
+                setActiveTab(activeTab === "pipeline" ? "contacts" : "pipeline");
+                return;
+              }
               setActiveTab(
                 activeTab === "dashboard"
                   ? "pipeline"
                   : activeTab === "pipeline"
                   ? "integrations"
                   : "dashboard"
-              )
-            }
+              );
+            }}
             className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300"
           >
             <Menu className="w-4 h-4" />
@@ -194,6 +202,8 @@ export function Topbar({
             className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-semibold shadow-sm ${
               user.mode === "master"
                 ? "bg-gradient-to-tr from-emerald-600 to-teal-500"
+                : user.mode === "agent"
+                ? "bg-gradient-to-tr from-sky-600 to-indigo-500"
                 : "bg-gradient-to-tr from-indigo-600 to-violet-500"
             }`}
           >
@@ -208,10 +218,16 @@ export function Topbar({
                 className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
                   user.mode === "master"
                     ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25"
+                    : user.mode === "agent"
+                    ? "bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25"
                     : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25"
                 }`}
               >
-                {user.mode === "master" ? "MASTER" : "DEMO"}
+                {user.mode === "master"
+                  ? "MASTER"
+                  : user.mode === "agent"
+                  ? "ATENDENTE"
+                  : "DEMO"}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">

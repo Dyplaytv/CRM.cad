@@ -13,9 +13,15 @@ import {
   Plus,
   Command,
   ShieldCheck,
+  UserCog,
 } from "lucide-react";
 
-export type NavTab = "dashboard" | "pipeline" | "contacts" | "integrations";
+export type NavTab =
+  | "dashboard"
+  | "pipeline"
+  | "contacts"
+  | "agents"
+  | "integrations";
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -26,6 +32,8 @@ interface SidebarProps {
   onOpenCommand: () => void;
   evolutionStatus: "connected" | "disconnected" | "connecting";
   dealsCount: number;
+  userMode?: "demo" | "master" | "agent";
+  agentsCount?: number;
 }
 
 export function Sidebar({
@@ -37,8 +45,10 @@ export function Sidebar({
   onOpenCommand,
   evolutionStatus,
   dealsCount,
+  userMode = "master",
+  agentsCount = 0,
 }: SidebarProps) {
-  const navItems: {
+  const allNavItems: {
     id: NavTab;
     label: string;
     icon: React.ElementType;
@@ -61,12 +71,28 @@ export function Sidebar({
       icon: Users2,
     },
     {
+      id: "agents",
+      label: "Atendentes",
+      icon: UserCog,
+      badge: agentsCount,
+    },
+    {
       id: "integrations",
       label: "Evolution API",
       icon: PlugZap,
       badge: evolutionStatus === "connected" ? "ON" : "OFF",
     },
   ];
+
+  const navItems = allNavItems.filter((item) => {
+    if (userMode === "agent") {
+      return item.id === "pipeline" || item.id === "contacts";
+    }
+    if (userMode === "demo") {
+      return item.id !== "agents";
+    }
+    return true;
+  });
 
   return (
     <motion.aside
