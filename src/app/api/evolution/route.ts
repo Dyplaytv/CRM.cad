@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { EvolutionConfig } from "@/types/crm";
 
 interface EvolutionProxyBody {
-  action: "sendText" | "connect" | "status" | "logout" | "setWebhook";
+  action: "sendText" | "sendMedia" | "connect" | "status" | "logout" | "setWebhook";
   config: EvolutionConfig;
   payload?: {
     number?: string;
     text?: string;
     delay?: number;
     linkPreview?: boolean;
+    mediatype?: "image" | "document" | "video" | "audio";
+    mimetype?: string;
+    caption?: string;
+    media?: string;
+    fileName?: string;
   };
 }
 
@@ -128,7 +133,7 @@ export async function POST(req: NextRequest) {
           enabled: true,
           url: config.webhookUrl.trim(),
           webhookByEvents: false,
-          webhookBase64: false,
+          webhookBase64: true,
           events: [
             "MESSAGES_UPSERT",
             "MESSAGES_UPDATE",
@@ -190,6 +195,46 @@ export async function POST(req: NextRequest) {
           data,
           error: !res.ok
             ? data?.message || data?.error || "Falha ao enviar mensagem."
+            : undefined,
+        },
+        { status: res.ok ? 200 : res.status }
+      );
+    }
+
+    if (action === "sendMedia") {
+      const cleanNumber = (payload?.number || "").replace(/\D/g, "");
+      const media = (payload?.media || "").trim();
+      if (!cleanNumber || !media) {
+        return NextResponse.json(
+          { ok: false, error: "Número e arquivo são obrigatórios." },
+          { status: 400 }
+        );
+      }
+
+      const endpoint = `${baseUrl}/message/sendMedia/${instanceName}`;
+      const v23MediaBody = {
+        number: cleanNumber,
+        mediatype: payload?.mediatype || "document",
+        mimetype: payload?.mimetype || "application/octet-stream",
+        caption: payload?.caption || "",
+        media,
+        fileName: payload?.fileName || "arquivo",
+      };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(v23MediaBody),
+      });
+      const data = await res.json().catch(() => ({}));
+      return NextResponse.json(
+        {
+          ok: res.ok,
+          status: res.status,
+          endpoint,
+          data,
+          error: !res.ok
+            ? data?.message || data?.error || "Falha ao enviar mídia."
             : undefined,
         },
         { status: res.ok ? 200 : res.status }

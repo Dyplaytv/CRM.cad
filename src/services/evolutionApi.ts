@@ -7,6 +7,15 @@ export interface SendTextPayload {
   linkPreview?: boolean;
 }
 
+export interface SendMediaPayload {
+  number: string;
+  mediatype: "image" | "document" | "video" | "audio";
+  mimetype: string;
+  caption?: string;
+  media: string;
+  fileName: string;
+}
+
 export interface EvolutionWebhookPayload {
   event: "messages.upsert" | "connection.update" | "qrcode.updated";
   instance: string;
@@ -102,6 +111,72 @@ export async function sendEvolutionTextMessage(
         conversation: payload.text,
       },
       messageTimestamp: Math.floor(Date.now() / 1000),
+      status: "PENDING",
+    },
+  };
+}
+
+/**
+ * Envia imagem ou documento diretamente do CRM para a Evolution API v2.3:
+ * POST {baseUrl}/message/sendMedia/{instanceName}
+ */
+export async function sendEvolutionMediaMessage(
+  config: EvolutionConfig,
+  payload: SendMediaPayload
+): Promise<{
+  ok: boolean;
+  simulated: boolean;
+  endpoint: string;
+  response: Record<string, unknown>;
+  error?: string;
+}> {
+  const cleanNumber = payload.number.replace(/\D/g, "");
+  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/message/sendMedia/${config.instanceName}`;
+
+  if (!isDemoConfig(config)) {
+    try {
+      const res = await fetch("/api/evolution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sendMedia",
+          config,
+          payload,
+        }),
+      });
+      const json = await res.json();
+      return {
+        ok: Boolean(json.ok),
+        simulated: false,
+        endpoint: json.endpoint || endpoint,
+        response: json.data || json,
+        error: json.error,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        simulated: false,
+        endpoint,
+        response: {},
+        error:
+          err instanceof Error
+            ? err.message
+            : "Erro de rede ao enviar mídia para Evolution API v2.3.",
+      };
+    }
+  }
+
+  await new Promise((r) => setTimeout(r, 350));
+  return {
+    ok: true,
+    simulated: true,
+    endpoint,
+    response: {
+      key: {
+        remoteJid: `${cleanNumber}@s.whatsapp.net`,
+        fromMe: true,
+        id: `BAE5${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+      },
       status: "PENDING",
     },
   };

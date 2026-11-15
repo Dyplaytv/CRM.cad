@@ -7,6 +7,9 @@ export interface StoredWebhookMessage {
   text: string;
   fromMe: boolean;
   receivedAt: number;
+  mediaUrl?: string;
+  mediaType?: "image" | "document" | "video" | "audio";
+  fileName?: string;
 }
 
 const globalForWebhook = globalThis as unknown as {

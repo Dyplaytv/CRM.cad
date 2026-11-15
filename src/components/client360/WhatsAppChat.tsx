@@ -11,9 +11,15 @@ import {
   Phone,
   ShieldCheck,
   Loader2,
+  X,
+  FileText,
+  Download,
 } from "lucide-react";
 import { ChatMessage, Deal, EvolutionConfig } from "@/types/crm";
-import { sendEvolutionTextMessage } from "@/services/evolutionApi";
+import {
+  sendEvolutionMediaMessage,
+  sendEvolutionTextMessage,
+} from "@/services/evolutionApi";
 
 interface WhatsAppChatProps {
   deal: Deal;
@@ -29,6 +35,13 @@ export function WhatsAppChat({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<{
+    fileName: string;
+    mimetype: string;
+    mediatype: "image" | "document" | "video" | "audio";
+    base64: string;
+    dataUrl: string;
+  } | null>(null);
   const [showApiInspector, setShowApiInspector] = useState(false);
   const [lastApiLog, setLastApiLog] = useState<{
     method: string;
@@ -38,6 +51,7 @@ export function WhatsAppChat({
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,15 +63,100 @@ export function WhatsAppChat({
     "Acabei de enviar o link de assinatura digital no seu e-mail corporativo!",
   ];
 
-  // Envia mensagem via POST /message/sendText (Evolution API)
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setSendError("O arquivo deve ter no máximo 10 MB.");
+      return;
+    }
+
+    setSendError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+      const mimetype = file.type || "application/octet-stream";
+      let mediatype: "image" | "document" | "video" | "audio" = "document";
+      if (mimetype.startsWith("image/")) mediatype = "image";
+      else if (mimetype.startsWith("video/")) mediatype = "video";
+      else if (mimetype.startsWith("audio/")) mediatype = "audio";
+
+      setPendingFile({
+        fileName: file.name,
+        mimetype,
+        mediatype,
+        base64,
+        dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Envia mensagem de texto ou mídia via Evolution API v2.3
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!text.trim() || sending) return;
+    if ((!text.trim() && !pendingFile) || sending) return;
 
     const currentText = text.trim();
+    const currentFile = pendingFile;
     setText("");
+    setPendingFile(null);
     setSendError(null);
     setSending(true);
+
+    if (currentFile) {
+      const apiResult = await sendEvolutionMediaMessage(evolutionConfig, {
+        number: deal.contactPhone,
+        mediatype: currentFile.mediatype,
+        mimetype: currentFile.mimetype,
+        caption: currentText,
+        media: currentFile.base64,
+        fileName: currentFile.fileName,
+      });
+
+      setLastApiLog({
+        method: "POST /message/sendMedia (v2.3)",
+        endpoint: apiResult.endpoint,
+        payload: {
+          number: deal.contactPhone.replace(/\D/g, ""),
+          mediatype: currentFile.mediatype,
+          fileName: currentFile.fileName,
+          caption: currentText,
+        },
+        response: apiResult.response,
+      });
+
+      if (!apiResult.ok) {
+        setSendError(
+          apiResult.error || "Erro ao enviar arquivo via Evolution API v2.3."
+        );
+        setText(currentText);
+        setPendingFile(currentFile);
+        setSending(false);
+        return;
+      }
+
+      const now = new Date().toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      onAddMessage(deal.id, {
+        id: `msg-${Date.now()}`,
+        sender: "me",
+        text: currentText || currentFile.fileName,
+        timestamp: now,
+        status: "read",
+        mediaUrl: currentFile.dataUrl,
+        mediaType: currentFile.mediatype,
+        fileName: currentFile.fileName,
+      });
+      setSending(false);
+      return;
+    }
 
     const apiResult = await sendEvolutionTextMessage(evolutionConfig, {
       number: deal.contactPhone,
@@ -262,7 +361,47 @@ export function WhatsAppChat({
                     : "bg-white dark:bg-[#202c33] text-zinc-900 dark:text-zinc-100 rounded-tl-none border border-zinc-200/60 dark:border-zinc-800"
                 }`}
               >
-                <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                {msg.mediaUrl && msg.mediaType === "image" && (
+                  <a
+                    href={msg.mediaUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block mb-1.5"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={msg.mediaUrl}
+                      alt={msg.fileName || "Imagem WhatsApp"}
+                      className="rounded-xl max-h-64 w-auto object-contain bg-black/5"
+                    />
+                  </a>
+                )}
+                {msg.mediaUrl && msg.mediaType === "video" && (
+                  <video
+                    controls
+                    src={msg.mediaUrl}
+                    className="rounded-xl max-h-64 max-w-full mb-1.5"
+                  />
+                )}
+                {msg.mediaUrl && msg.mediaType === "audio" && (
+                  <audio controls src={msg.mediaUrl} className="max-w-full mb-1.5" />
+                )}
+                {msg.mediaUrl && msg.mediaType === "document" && (
+                  <a
+                    href={msg.mediaUrl}
+                    download={msg.fileName || "documento"}
+                    className="flex items-center gap-2 p-2 mb-1.5 rounded-xl bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+                  >
+                    <FileText className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span className="truncate font-medium">
+                      {msg.fileName || "Documento"}
+                    </span>
+                    <Download className="w-3.5 h-3.5 shrink-0 ml-auto opacity-75" />
+                  </a>
+                )}
+                {msg.text && (
+                  <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                )}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-500 dark:text-zinc-300/80">
                   <span>{msg.timestamp}</span>
                   {isMe && (
@@ -297,14 +436,49 @@ export function WhatsAppChat({
           {sendError}
         </div>
       )}
+      {pendingFile && (
+        <div className="px-3 py-2 bg-emerald-500/10 border-t border-emerald-500/25 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {pendingFile.mediatype === "image" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={pendingFile.dataUrl}
+                alt={pendingFile.fileName}
+                className="w-9 h-9 rounded-lg object-cover border border-emerald-500/30 shrink-0"
+              />
+            ) : (
+              <FileText className="w-5 h-5 text-emerald-500 shrink-0" />
+            )}
+            <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
+              {pendingFile.fileName}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPendingFile(null)}
+            title="Remover anexo"
+            className="p-1 rounded-lg text-zinc-500 hover:text-rose-500"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <form
         onSubmit={handleSendMessage}
         className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-2"
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
         <button
           type="button"
+          onClick={() => fileInputRef.current?.click()}
           className="p-2 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition-colors"
-          title="Anexar Proposta PDF"
+          title="Anexar imagem, PDF ou documento"
         >
           <Paperclip className="w-4 h-4" />
         </button>
@@ -313,13 +487,17 @@ export function WhatsAppChat({
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Digite uma mensagem para enviar via Evolution API..."
+          placeholder={
+            pendingFile
+              ? "Adicionar legenda (opcional) e enviar..."
+              : "Digite uma mensagem para enviar via Evolution API..."
+          }
           className="flex-1 rounded-xl px-3.5 py-2 text-xs bg-white dark:bg-[#2a3942] text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none border border-zinc-200/70 dark:border-zinc-700/80"
         />
 
         <button
           type="submit"
-          disabled={!text.trim() || sending}
+          disabled={(!text.trim() && !pendingFile) || sending}
           className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
         >
           {sending ? (

@@ -19,16 +19,46 @@ interface EvolutionV23WebhookBody {
     pushName?: string;
     message?: {
       conversation?: string;
+      base64?: string;
       extendedTextMessage?: {
         text?: string;
       };
       imageMessage?: {
         caption?: string;
+        mimetype?: string;
+        url?: string;
+      };
+      stickerMessage?: {
+        mimetype?: string;
+        url?: string;
+      };
+      documentMessage?: {
+        caption?: string;
+        mimetype?: string;
+        fileName?: string;
+        url?: string;
+      };
+      documentWithCaptionMessage?: {
+        message?: {
+          documentMessage?: {
+            caption?: string;
+            mimetype?: string;
+            fileName?: string;
+            url?: string;
+          };
+        };
       };
       videoMessage?: {
         caption?: string;
+        mimetype?: string;
+        url?: string;
+      };
+      audioMessage?: {
+        mimetype?: string;
+        url?: string;
       };
     };
+    base64?: string;
     messageTimestamp?: number;
     state?: "open" | "close" | "connecting";
   };
@@ -66,12 +96,59 @@ export async function POST(req: NextRequest) {
       body.data?.key?.id ||
       `whk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+    const msg = body.data?.message;
+    const docMsg =
+      msg?.documentMessage ||
+      msg?.documentWithCaptionMessage?.message?.documentMessage;
+
+    let mediaType: "image" | "document" | "video" | "audio" | undefined;
+    let mimetype = "application/octet-stream";
+    let fileName: string | undefined;
+
+    if (msg?.imageMessage || msg?.stickerMessage) {
+      mediaType = "image";
+      mimetype =
+        msg.imageMessage?.mimetype ||
+        msg.stickerMessage?.mimetype ||
+        "image/jpeg";
+    } else if (docMsg) {
+      mediaType = "document";
+      mimetype = docMsg.mimetype || "application/pdf";
+      fileName = docMsg.fileName || "Documento";
+    } else if (msg?.videoMessage) {
+      mediaType = "video";
+      mimetype = msg.videoMessage.mimetype || "video/mp4";
+    } else if (msg?.audioMessage) {
+      mediaType = "audio";
+      mimetype = msg.audioMessage.mimetype || "audio/ogg";
+    }
+
+    const rawBase64 = msg?.base64 || body.data?.base64 || "";
+    const mediaUrl =
+      mediaType && rawBase64
+        ? rawBase64.startsWith("data:")
+          ? rawBase64
+          : `data:${mimetype};base64,${rawBase64}`
+        : undefined;
+
+    const fallbackLabel =
+      mediaType === "image"
+        ? "📷 Imagem recebida"
+        : mediaType === "document"
+        ? `📎 Documento: ${fileName || "arquivo"}`
+        : mediaType === "video"
+        ? "🎥 Vídeo recebido"
+        : mediaType === "audio"
+        ? "🎤 Áudio recebido"
+        : "";
+
     const incomingText =
-      body.data?.message?.conversation ||
-      body.data?.message?.extendedTextMessage?.text ||
-      body.data?.message?.imageMessage?.caption ||
-      body.data?.message?.videoMessage?.caption ||
-      "";
+      msg?.conversation ||
+      msg?.extendedTextMessage?.text ||
+      msg?.imageMessage?.caption ||
+      docMsg?.caption ||
+      msg?.videoMessage?.caption ||
+      fallbackLabel;
 
     const { phone, remoteJid } = extractPhoneFromKey(body.data?.key);
 
@@ -80,7 +157,7 @@ export async function POST(req: NextRequest) {
         eventType === "messages_upsert" ||
         eventType === "messages-upsert") &&
       !fromMe &&
-      incomingText.trim() &&
+      (incomingText.trim() || mediaUrl) &&
       phone
     ) {
       pushWebhookMessage({
@@ -89,9 +166,12 @@ export async function POST(req: NextRequest) {
         remoteJid,
         phone,
         pushName: body.data?.pushName || phone,
-        text: incomingText.trim(),
+        text: incomingText.trim() || fallbackLabel,
         fromMe,
         receivedAt: Date.now(),
+        mediaUrl,
+        mediaType,
+        fileName,
       });
     }
 

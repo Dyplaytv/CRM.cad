@@ -262,6 +262,9 @@ export default function CRMWorkspacePage() {
             pushName?: string;
             text: string;
             receivedAt: number;
+            mediaUrl?: string;
+            mediaType?: "image" | "document" | "video" | "audio";
+            fileName?: string;
           }>;
           serverTime?: number;
         };
@@ -297,6 +300,9 @@ export default function CRMWorkspacePage() {
                 hour: "2-digit",
                 minute: "2-digit",
               }),
+              mediaUrl: ev.mediaUrl,
+              mediaType: ev.mediaType,
+              fileName: ev.fileName,
             }));
 
             return {
@@ -332,6 +338,9 @@ export default function CRMWorkspacePage() {
                 hour: "2-digit",
                 minute: "2-digit",
               }),
+              mediaUrl: ev.mediaUrl,
+              mediaType: ev.mediaType,
+              fileName: ev.fileName,
             };
 
             if (existingNew) {

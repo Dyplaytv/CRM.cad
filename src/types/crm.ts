@@ -40,6 +40,9 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   status?: "sent" | "delivered" | "read";
+  mediaUrl?: string;
+  mediaType?: "image" | "document" | "video" | "audio";
+  fileName?: string;
 }
 
 export interface TimelineEvent {
