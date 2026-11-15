@@ -21,6 +21,7 @@ import {
 import { Deal } from "@/types/crm";
 import { MONTHLY_REVENUE } from "@/data/mockData";
 import { isTaskOverdue, sortTasksByExpiration } from "@/lib/taskDates";
+import { getDealUnreadCount } from "@/lib/unreadWhatsApp";
 
 interface SalesDashboardProps {
   deals: Deal[];
@@ -38,11 +39,13 @@ export function SalesDashboard({
   onOpenPipeline,
 }: SalesDashboardProps) {
   const [hoveredMonth, setHoveredMonth] = useState<number | null>(10); // Novembro default
+  const [showUnreadList, setShowUnreadList] = useState(false);
 
   // Cálculo dinâmico real das métricas do topo a partir dos negócios ativos
   const newLeadsCount = deals.filter(
     (d) => d.stage === "leads" || d.stage === "contacted"
   ).length;
+  const unreadDeals = deals.filter((d) => getDealUnreadCount(d) > 0);
 
   const openProposals = deals.filter(
     (d) => d.stage === "proposal" || d.stage === "negotiation"
@@ -57,8 +60,20 @@ export function SalesDashboard({
 
   const forecastRevenue = deals.reduce((acc, d) => acc + d.value, 0);
 
-  const kpiCards = [
+  const kpiCards: Array<{
+    key: string;
+    title: string;
+    value: string;
+    growth: string;
+    subtitle: string;
+    icon: React.ElementType;
+    accent: string;
+    iconColor: string;
+    clickable?: boolean;
+    hasAlert?: boolean;
+  }> = [
     {
+      key: "new-leads",
       title: "Novos Leads",
       value: `${newLeadsCount}`,
       growth: `${deals.length} total`,
@@ -68,6 +83,28 @@ export function SalesDashboard({
       iconColor: "text-sky-500 bg-sky-500/10 border-sky-500/20",
     },
     {
+      key: "unread-whatsapp",
+      title: "Whats Esperando Resposta",
+      value: `${unreadDeals.length}`,
+      growth: unreadDeals.length > 0 ? "Ver conversas" : "Em dia",
+      subtitle:
+        unreadDeals.length > 0
+          ? `Clique para ver ${unreadDeals.length} conversa(s) não aberta(s)`
+          : "Nenhuma mensagem aguardando abertura",
+      icon: MessageSquare,
+      accent:
+        unreadDeals.length > 0
+          ? "from-emerald-500/20 to-teal-500/5"
+          : "from-zinc-500/10 to-zinc-500/5",
+      iconColor:
+        unreadDeals.length > 0
+          ? "text-emerald-500 bg-emerald-500/15 border-emerald-500/30"
+          : "text-zinc-500 bg-zinc-500/10 border-zinc-500/20",
+      clickable: true,
+      hasAlert: unreadDeals.length > 0,
+    },
+    {
+      key: "open-proposals",
       title: "Propostas Abertas",
       value: `${openProposals.length}`,
       growth: openProposals.length > 0 ? "Ativas" : "0 ativas",
@@ -81,6 +118,7 @@ export function SalesDashboard({
       iconColor: "text-violet-500 bg-violet-500/10 border-violet-500/20",
     },
     {
+      key: "conversion-rate",
       title: "Taxa de Conversão",
       value: `${conversionRate}%`,
       growth: `${closedDeals.length} ganho(s)`,
@@ -90,6 +128,7 @@ export function SalesDashboard({
       iconColor: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
     },
     {
+      key: "forecast-revenue",
       title: "Receita Prevista",
       value: forecastRevenue.toLocaleString("pt-BR", {
         style: "currency",
@@ -162,7 +201,7 @@ export function SalesDashboard({
   return (
     <div className="space-y-6 pb-10">
       {/* Top KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpiCards.map((card, idx) => {
           const Icon = card.icon;
           return (
@@ -171,7 +210,18 @@ export function SalesDashboard({
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.06 }}
-              className="relative overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-5 drop-shadow-sm hover:border-indigo-500/40 transition-all group"
+              onClick={
+                card.clickable
+                  ? () => setShowUnreadList((prev) => !prev)
+                  : undefined
+              }
+              className={`relative overflow-hidden rounded-2xl border bg-white dark:bg-zinc-900/90 p-5 drop-shadow-sm transition-all group ${
+                card.clickable ? "cursor-pointer" : ""
+              } ${
+                card.hasAlert
+                  ? "border-emerald-500/50 hover:border-emerald-500 ring-1 ring-emerald-500/20"
+                  : "border-zinc-200/80 dark:border-zinc-800/80 hover:border-indigo-500/40"
+              }`}
             >
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${card.accent} opacity-60 pointer-events-none`}
@@ -181,9 +231,17 @@ export function SalesDashboard({
                   {card.title}
                 </span>
                 <div
-                  className={`w-9 h-9 rounded-xl border flex items-center justify-center ${card.iconColor}`}
+                  className={`relative w-9 h-9 rounded-xl border flex items-center justify-center ${
+                    card.iconColor
+                  } ${card.hasAlert ? "animate-pulse" : ""}`}
                 >
                   <Icon className="w-4 h-4" />
+                  {card.hasAlert && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -204,6 +262,70 @@ export function SalesDashboard({
           );
         })}
       </div>
+
+      {/* Lista expansível de WhatsApp esperando resposta */}
+      {showUnreadList && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-emerald-500/30 bg-white dark:bg-zinc-900/95 p-5 shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-emerald-500 animate-pulse" />
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Conversas de WhatsApp Aguardando Abertura ({unreadDeals.length})
+              </h3>
+            </div>
+            <button
+              onClick={() => setShowUnreadList(false)}
+              className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+            >
+              Fechar
+            </button>
+          </div>
+
+          {unreadDeals.length === 0 ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 py-3">
+              Todas as mensagens recebidas já foram visualizadas.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {unreadDeals.map((deal) => {
+                const unread = getDealUnreadCount(deal);
+                const lastMsg =
+                  deal.messages[deal.messages.length - 1]?.text ||
+                  "Nova mensagem recebida";
+                return (
+                  <button
+                    key={deal.id}
+                    onClick={() => {
+                      setShowUnreadList(false);
+                      onSelectDeal(deal);
+                    }}
+                    className="text-left p-3.5 rounded-xl border border-emerald-500/25 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                        {deal.contactName || deal.company}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                        {deal.contactPhone}
+                      </p>
+                      <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate mt-1">
+                        {lastMsg}
+                      </p>
+                    </div>
+                    <span className="shrink-0 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold animate-pulse">
+                      {unread} nova(s)
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* Main Grid: Bar Chart + Follow-up Tasks */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

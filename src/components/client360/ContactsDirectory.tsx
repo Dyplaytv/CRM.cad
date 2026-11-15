@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Deal } from "@/types/crm";
 import { KANBAN_STAGES } from "@/data/mockData";
+import { getDealUnreadCount } from "@/lib/unreadWhatsApp";
 
 interface ContactsDirectoryProps {
   deals: Deal[];
@@ -85,16 +86,36 @@ export function ContactsDirectory({
                       {deal.stagnantDays}d
                     </span>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectDeal(deal, "whatsapp");
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    Chat 360º
-                  </button>
+                  {(() => {
+                    const unreadCount = getDealUnreadCount(deal);
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectDeal(deal, "whatsapp");
+                        }}
+                        title={
+                          unreadCount > 0
+                            ? `${unreadCount} mensagem(ns) não lida(s)`
+                            : "Abrir Chat 360º"
+                        }
+                        className={`relative px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                          unreadCount > 0
+                            ? "bg-emerald-500/25 text-emerald-500 dark:text-emerald-300 ring-2 ring-emerald-400/70 animate-pulse"
+                            : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Chat 360º
+                        {unreadCount > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })()}
                   <span className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
                     <ExternalLink className="w-3.5 h-3.5" />
                   </span>

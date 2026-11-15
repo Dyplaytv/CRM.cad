@@ -76,6 +76,7 @@ export interface Deal {
   tasks: DealTask[];
   messages: ChatMessage[];
   timeline: TimelineEvent[];
+  unreadCount?: number;
 }
 
 export interface StageColumn {

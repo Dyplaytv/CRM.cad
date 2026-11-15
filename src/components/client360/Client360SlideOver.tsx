@@ -132,6 +132,13 @@ export function Client360SlideOver({
     setActiveTab(initialTab);
   }, [initialTab, deal?.id]);
 
+  useEffect(() => {
+    if (deal && activeTab === "whatsapp" && deal.unreadCount !== 0) {
+      onUpdateDeal(deal.id, { unreadCount: 0 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, deal?.id]);
+
   if (!deal) return null;
 
   const handleSaveClientData = (e: React.FormEvent) => {

@@ -301,6 +301,7 @@ export default function CRMWorkspacePage() {
 
             return {
               ...deal,
+              unreadCount: (deal.unreadCount ?? 0) + newMsgs.length,
               messages: [...deal.messages, ...newMsgs],
               timeline: [
                 ...newMsgs.map((m) => ({
@@ -336,6 +337,7 @@ export default function CRMWorkspacePage() {
             if (existingNew) {
               if (!existingNew.messages.some((m) => m.id === ev.id)) {
                 existingNew.messages.push(msgObj);
+                existingNew.unreadCount = (existingNew.unreadCount ?? 0) + 1;
               }
             } else {
               const displayName = ev.pushName || `+${ev.phone}`;
@@ -364,6 +366,7 @@ export default function CRMWorkspacePage() {
                 notes: `<p>Lead criado automaticamente ao receber mensagem via Evolution API v2.3.</p>`,
                 tasks: [],
                 messages: [msgObj],
+                unreadCount: 1,
                 timeline: [
                   {
                     id: `ev-${ev.id}`,
@@ -534,6 +537,9 @@ export default function CRMWorkspacePage() {
   ) => {
     setSelectedDealId(deal.id);
     setSlideOverTab(defaultTab);
+    if (defaultTab === "whatsapp" && deal.unreadCount !== 0) {
+      updateDealById(deal.id, (d) => ({ ...d, unreadCount: 0 }));
+    }
   };
 
   // Movimentação de Card no Kanban (zera dias estagnados e adiciona evento na timeline)
@@ -590,6 +596,8 @@ export default function CRMWorkspacePage() {
   const handleAddMessage = (dealId: string, msg: ChatMessage) => {
     updateDealById(dealId, (d) => ({
       ...d,
+      unreadCount:
+        msg.sender === "me" ? 0 : (d.unreadCount ?? 0) + 1,
       messages: [...d.messages, msg],
       timeline: [
         {
