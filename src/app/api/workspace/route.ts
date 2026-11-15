@@ -15,12 +15,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Não autenticado" }, { status: 401 });
   }
 
-  if (user.mode === "demo") {
+  if (user.mode === "demo" || user.mode === "super_master") {
     return NextResponse.json({ ok: true, deals: null, evolutionConfig: null });
   }
 
-  const allDeals = getWorkspaceDeals();
-  const evolutionConfig = getWorkspaceEvolutionConfig();
+  const companyId = user.companyId || "company-default";
+  const allDeals = getWorkspaceDeals(companyId);
+  const evolutionConfig = getWorkspaceEvolutionConfig(companyId);
 
   if (user.mode === "agent") {
     const agentDeals = allDeals.filter(
@@ -42,12 +43,14 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const user = getSessionUser(req);
-  if (!user || user.mode !== "master") {
+  if (!user || user.mode !== "manager") {
     return NextResponse.json(
-      { ok: false, error: "Apenas o Master Admin pode salvar o workspace completo." },
+      { ok: false, error: "Apenas o Gerente da empresa pode salvar o workspace." },
       { status: 403 }
     );
   }
+
+  const companyId = user.companyId || "company-default";
 
   try {
     const body = (await req.json()) as {
@@ -56,10 +59,10 @@ export async function PUT(req: NextRequest) {
     };
 
     if (Array.isArray(body.deals)) {
-      setWorkspaceDeals(body.deals);
+      setWorkspaceDeals(companyId, body.deals);
     }
     if (body.evolutionConfig) {
-      setWorkspaceEvolutionConfig(body.evolutionConfig);
+      setWorkspaceEvolutionConfig(companyId, body.evolutionConfig);
     }
 
     return NextResponse.json({ ok: true });
@@ -73,9 +76,11 @@ export async function PUT(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const user = getSessionUser(req);
-  if (!user || user.mode === "demo") {
+  if (!user || user.mode === "demo" || user.mode === "super_master") {
     return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 403 });
   }
+
+  const companyId = user.companyId || "company-default";
 
   try {
     const body = (await req.json()) as { deal?: Deal };
@@ -85,7 +90,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (user.mode === "agent") {
-      const existing = getWorkspaceDeals().find((d) => d.id === deal.id);
+      const existing = getWorkspaceDeals(companyId).find((d) => d.id === deal.id);
       if (existing && existing.seller?.id !== user.agentId) {
         return NextResponse.json(
           { ok: false, error: "Você não tem permissão para alterar este atendimento." },
@@ -100,7 +105,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    upsertWorkspaceDeal(deal);
+    upsertWorkspaceDeal(companyId, deal);
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json(

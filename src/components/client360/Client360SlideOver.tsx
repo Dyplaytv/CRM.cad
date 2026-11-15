@@ -274,7 +274,7 @@ export function Client360SlideOver({
                     title="Transferir conversa para atendente"
                     className="rounded-xl px-3 py-1.5 text-xs font-medium bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/70 text-indigo-700 dark:text-indigo-300 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="master-admin">Atendente: Admin</option>
+                    <option value="master-admin">Atendente: Gerente</option>
                     {agents.map((agent) => (
                       <option key={agent.id} value={agent.id}>
                         Atendente: {agent.name}

@@ -7,17 +7,17 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: "Não autenticado" }, { status: 401 });
   }
-  if (user.mode !== "master") {
+  if (user.mode !== "manager") {
     return NextResponse.json({ ok: true, agents: [] });
   }
-  return NextResponse.json({ ok: true, agents: listAgents() });
+  return NextResponse.json({ ok: true, agents: listAgents(user.companyId) });
 }
 
 export async function POST(req: NextRequest) {
   const user = getSessionUser(req);
-  if (!user || user.mode !== "master") {
+  if (!user || user.mode !== "manager") {
     return NextResponse.json(
-      { ok: false, error: "Apenas o Master Admin pode adicionar atendentes." },
+      { ok: false, error: "Apenas o Gerente pode adicionar atendentes." },
       { status: 403 }
     );
   }
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     };
 
     const result = createAgent({
+      companyId: user.companyId,
       name: body.name || "",
       username: body.username || "",
       password: body.password || "",
@@ -53,9 +54,9 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const user = getSessionUser(req);
-  if (!user || user.mode !== "master") {
+  if (!user || user.mode !== "manager") {
     return NextResponse.json(
-      { ok: false, error: "Apenas o Master Admin pode remover atendentes." },
+      { ok: false, error: "Apenas o Gerente pode remover atendentes." },
       { status: 403 }
     );
   }
@@ -68,7 +69,7 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
-  const removed = deleteAgent(id);
+  const removed = deleteAgent(id, user.companyId);
   if (!removed) {
     return NextResponse.json(
       { ok: false, error: "Atendente não encontrado." },

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AuthUser } from "@/types/crm";
-import { verifyAgentCredentials } from "@/lib/crmStore";
+import {
+  getCompanyById,
+  verifyAgentCredentials,
+  verifyManagerCredentials,
+} from "@/lib/crmStore";
 import {
   COOKIE_NAME,
   encodeSession,
@@ -15,12 +19,12 @@ const DEMO_USER: AuthUser = {
   mode: "demo",
 };
 
-const MASTER_USER: AuthUser = {
+const SUPER_MASTER_USER: AuthUser = {
   username: "Admin07",
   name: "Master Admin07",
-  role: "Master Admin",
+  role: "Master da Plataforma",
   initials: "MA",
-  mode: "master",
+  mode: "super_master",
 };
 
 export async function GET(req: NextRequest) {
@@ -47,23 +51,45 @@ export async function POST(req: NextRequest) {
       const normalizedUser = (body.username || "").trim().toLowerCase();
       const password = body.password || "";
 
-      const isMasterUser =
+      const isSuperMaster =
         normalizedUser === "admin07" || normalizedUser === "master admin07";
 
-      if (isMasterUser && password === "Admin007") {
-        authenticatedUser = MASTER_USER;
+      if (isSuperMaster && password === "Admin007") {
+        authenticatedUser = SUPER_MASTER_USER;
       } else {
-        const agent = verifyAgentCredentials(body.username || "", password);
-        if (agent) {
+        const manager = verifyManagerCredentials(
+          body.username || "",
+          password
+        );
+        if (manager) {
           authenticatedUser = {
-            username: agent.username,
-            name: agent.name,
-            role: "Atendente",
-            initials: agent.initials,
-            mode: "agent",
-            agentId: agent.id,
-            color: agent.color,
+            username: manager.username,
+            name: manager.name,
+            role: `Gerente • ${manager.companyName}`,
+            initials: manager.initials,
+            mode: "manager",
+            companyId: manager.companyId,
+            companyName: manager.companyName,
+            color: manager.color,
           };
+        } else {
+          const agent = verifyAgentCredentials(body.username || "", password);
+          if (agent) {
+            const company = agent.companyId
+              ? getCompanyById(agent.companyId)
+              : undefined;
+            authenticatedUser = {
+              username: agent.username,
+              name: agent.name,
+              role: company ? `Atendente • ${company.name}` : "Atendente",
+              initials: agent.initials,
+              mode: "agent",
+              agentId: agent.id,
+              companyId: agent.companyId,
+              companyName: company?.name,
+              color: agent.color,
+            };
+          }
         }
       }
     }
@@ -87,7 +113,7 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
+      maxAge: 60 * 60 * 24 * 7,
     });
 
     return res;

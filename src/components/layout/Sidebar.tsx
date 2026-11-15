@@ -14,9 +14,11 @@ import {
   Command,
   ShieldCheck,
   UserCog,
+  Building2,
 } from "lucide-react";
 
 export type NavTab =
+  | "master"
   | "dashboard"
   | "pipeline"
   | "contacts"
@@ -32,8 +34,9 @@ interface SidebarProps {
   onOpenCommand: () => void;
   evolutionStatus: "connected" | "disconnected" | "connecting";
   dealsCount: number;
-  userMode?: "demo" | "master" | "agent";
+  userMode?: "demo" | "super_master" | "manager" | "agent";
   agentsCount?: number;
+  companiesCount?: number;
 }
 
 export function Sidebar({
@@ -45,8 +48,9 @@ export function Sidebar({
   onOpenCommand,
   evolutionStatus,
   dealsCount,
-  userMode = "master",
+  userMode = "manager",
   agentsCount = 0,
+  companiesCount = 0,
 }: SidebarProps) {
   const allNavItems: {
     id: NavTab;
@@ -54,6 +58,12 @@ export function Sidebar({
     icon: React.ElementType;
     badge?: string | number;
   }[] = [
+    {
+      id: "master",
+      label: "Empresas & Gerentes",
+      icon: Building2,
+      badge: companiesCount,
+    },
     {
       id: "dashboard",
       label: "Dashboard",
@@ -85,6 +95,9 @@ export function Sidebar({
   ];
 
   const navItems = allNavItems.filter((item) => {
+    if (userMode === "super_master") {
+      return item.id === "master";
+    }
     if (userMode === "agent") {
       return (
         item.id === "dashboard" ||
@@ -93,9 +106,9 @@ export function Sidebar({
       );
     }
     if (userMode === "demo") {
-      return item.id !== "agents";
+      return item.id !== "agents" && item.id !== "master";
     }
-    return true;
+    return item.id !== "master";
   });
 
   return (

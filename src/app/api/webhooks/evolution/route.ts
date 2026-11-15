@@ -3,7 +3,7 @@ import {
   getWebhookMessagesSince,
   pushWebhookMessage,
 } from "@/lib/webhookStore";
-import { getWorkspaceEvolutionConfig } from "@/lib/crmStore";
+import { findEvolutionConfigByInstance } from "@/lib/crmStore";
 
 interface EvolutionMessageContent {
   conversation?: string;
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
 
     // Se a Evolution API não enviou o base64 inline no webhook, buscamos diretamente via REST v2.3
     if (mediaType && !rawBase64 && !fromMe && body.data?.key) {
-      const evoConfig = getWorkspaceEvolutionConfig();
+      const evoConfig = findEvolutionConfigByInstance(instance);
       const baseUrl = evoConfig?.baseUrl?.trim().replace(/\/+$/, "");
       const apiKey = evoConfig?.apiKey?.trim();
       const targetInstance = (

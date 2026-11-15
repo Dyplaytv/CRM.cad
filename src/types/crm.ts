@@ -110,13 +110,36 @@ export interface AuthUser {
   name: string;
   role: string;
   initials: string;
-  mode: "demo" | "master" | "agent";
+  mode: "demo" | "super_master" | "manager" | "agent";
+  companyId?: string;
+  companyName?: string;
   agentId?: string;
   color?: string;
 }
 
+export interface CompanyAccount {
+  id: string;
+  name: string;
+  document?: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ManagerAccount {
+  id: string;
+  companyId: string;
+  companyName: string;
+  name: string;
+  username: string;
+  initials: string;
+  color: string;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface AgentAccount {
   id: string;
+  companyId?: string;
   name: string;
   username: string;
   initials: string;

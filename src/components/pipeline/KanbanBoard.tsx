@@ -301,7 +301,7 @@ export function KanbanBoard({
                                 value="master-admin"
                                 className="bg-white dark:bg-zinc-900"
                               >
-                                Master Admin
+                                Gerente
                               </option>
                               {agents.map((agent) => (
                                 <option

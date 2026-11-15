@@ -13,9 +13,11 @@ import {
   AgentAccount,
   AuthUser,
   ChatMessage,
+  CompanyAccount,
   Deal,
   DealTask,
   EvolutionConfig,
+  ManagerAccount,
   Seller,
   StageId,
 } from "@/types/crm";
@@ -29,6 +31,10 @@ import { Client360SlideOver } from "@/components/client360/Client360SlideOver";
 import { ContactsDirectory } from "@/components/client360/ContactsDirectory";
 import { EvolutionSettings } from "@/components/integrations/EvolutionSettings";
 import { AgentsManager } from "@/components/agents/AgentsManager";
+import {
+  MasterDashboard,
+  MasterOverviewStats,
+} from "@/components/master/MasterDashboard";
 import { LoginScreen } from "@/components/auth/LoginScreen";
 
 const DEMO_EVOLUTION_CONFIG: EvolutionConfig = {
@@ -68,9 +74,46 @@ export default function CRMWorkspacePage() {
   const [agents, setAgents] = useState<AgentAccount[]>([]);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
+  const [companies, setCompanies] = useState<CompanyAccount[]>([]);
+  const [managers, setManagers] = useState<ManagerAccount[]>([]);
+  const [masterStats, setMasterStats] = useState<MasterOverviewStats>({
+    totalCompanies: 0,
+    activeCompanies: 0,
+    totalManagers: 0,
+    totalAgents: 0,
+    totalDeals: 0,
+    totalPipelineValue: 0,
+    perCompany: [],
+  });
+
+  const loadMasterOverview = useCallback(async () => {
+    try {
+      const res = await fetch("/api/master");
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        companies?: CompanyAccount[];
+        managers?: ManagerAccount[];
+        stats?: MasterOverviewStats;
+      };
+      if (Array.isArray(data.companies)) setCompanies(data.companies);
+      if (Array.isArray(data.managers)) setManagers(data.managers);
+      if (data.stats) setMasterStats(data.stats);
+    } catch {}
+  }, []);
+
   const hydrateWorkspaceForUser = useCallback(async (loggedUser: AuthUser) => {
     setSelectedDealId(null);
     setWorkspaceLoaded(false);
+
+    if (loggedUser.mode === "super_master") {
+      setActiveTab("master");
+      setDeals([]);
+      setAgents([]);
+      await loadMasterOverview();
+      setWorkspaceLoaded(true);
+      return;
+    }
+
     setActiveTab("dashboard");
 
     if (loggedUser.mode === "demo") {
@@ -101,7 +144,7 @@ export default function CRMWorkspacePage() {
     try {
       const [wsRes, agentsRes] = await Promise.all([
         fetch("/api/workspace"),
-        loggedUser.mode === "master"
+        loggedUser.mode === "manager"
           ? fetch("/api/agents")
           : Promise.resolve(null),
       ]);
@@ -126,8 +169,11 @@ export default function CRMWorkspacePage() {
         let serverDeals = Array.isArray(wsData.deals) ? wsData.deals : [];
         let serverEvo = wsData.evolutionConfig || null;
 
-        // Migra dados locais do Master para o servidor se o servidor ainda estiver vazio
-        if (loggedUser.mode === "master") {
+        // Migra dados locais da empresa principal para o servidor se o servidor ainda estiver vazio
+        if (
+          loggedUser.mode === "manager" &&
+          loggedUser.companyId === "company-default"
+        ) {
           const savedDealsRaw = localStorage.getItem(MASTER_DEALS_KEY);
           const localDeals = savedDealsRaw
             ? (JSON.parse(savedDealsRaw) as Deal[])
@@ -170,7 +216,7 @@ export default function CRMWorkspacePage() {
     } finally {
       setWorkspaceLoaded(true);
     }
-  }, []);
+  }, [loadMasterOverview]);
 
   // Verificar sessão ativa ao carregar
   useEffect(() => {
@@ -193,12 +239,14 @@ export default function CRMWorkspacePage() {
     };
   }, [hydrateWorkspaceForUser]);
 
-  // Persistir alterações da conta Master no localStorage e no servidor
+  // Persistir alterações da conta Gerente no servidor (e localStorage na empresa padrão)
   useEffect(() => {
-    if (user?.mode === "master" && workspaceLoaded) {
-      try {
-        localStorage.setItem(MASTER_DEALS_KEY, JSON.stringify(deals));
-      } catch {}
+    if (user?.mode === "manager" && workspaceLoaded) {
+      if (user.companyId === "company-default") {
+        try {
+          localStorage.setItem(MASTER_DEALS_KEY, JSON.stringify(deals));
+        } catch {}
+      }
       fetch("/api/workspace", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -208,13 +256,15 @@ export default function CRMWorkspacePage() {
   }, [deals, user, workspaceLoaded]);
 
   useEffect(() => {
-    if (user?.mode === "master" && workspaceLoaded) {
-      try {
-        localStorage.setItem(
-          MASTER_EVOLUTION_KEY,
-          JSON.stringify(evolutionConfig)
-        );
-      } catch {}
+    if (user?.mode === "manager" && workspaceLoaded) {
+      if (user.companyId === "company-default") {
+        try {
+          localStorage.setItem(
+            MASTER_EVOLUTION_KEY,
+            JSON.stringify(evolutionConfig)
+          );
+        } catch {}
+      }
       fetch("/api/workspace", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -244,11 +294,11 @@ export default function CRMWorkspacePage() {
     };
     const interval = setInterval(syncAgentWorkspace, 4000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, evolutionConfig.instanceName]);
 
-  // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Master
+  // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Gerente
   useEffect(() => {
-    if (user?.mode !== "master") return;
+    if (user?.mode !== "manager") return;
     let lastChecked = 0;
 
     const pollWebhooks = async () => {
@@ -258,6 +308,7 @@ export default function CRMWorkspacePage() {
         const data = (await res.json()) as {
           events?: Array<{
             id: string;
+            instance?: string;
             phone: string;
             pushName?: string;
             text: string;
@@ -271,7 +322,11 @@ export default function CRMWorkspacePage() {
         if (data.serverTime) {
           lastChecked = data.serverTime;
         }
-        const events = data.events || [];
+        const targetInstance = evolutionConfig.instanceName?.trim().toLowerCase();
+        const events = (data.events || []).filter((ev) => {
+          if (!targetInstance || !ev.instance) return true;
+          return ev.instance.trim().toLowerCase() === targetInstance;
+        });
         if (events.length === 0) return;
 
         setDeals((prev) => {
@@ -463,6 +518,87 @@ export default function CRMWorkspacePage() {
     );
   };
 
+  const handleCreateCompany = async (input: {
+    name: string;
+    document?: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "createCompany", ...input }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao criar empresa." };
+      }
+      await loadMasterOverview();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
+  const handleToggleCompany = async (companyId: string) => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggleCompany", companyId }),
+      });
+      if (res.ok) await loadMasterOverview();
+    } catch {}
+  };
+
+  const handleDeleteCompany = async (companyId: string) => {
+    try {
+      const res = await fetch(
+        `/api/master?type=company&id=${encodeURIComponent(companyId)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) await loadMasterOverview();
+    } catch {}
+  };
+
+  const handleCreateManager = async (input: {
+    companyId: string;
+    name: string;
+    username: string;
+    password: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "createManager", ...input }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao criar gerente." };
+      }
+      await loadMasterOverview();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
+  const handleDeleteManager = async (managerId: string) => {
+    try {
+      const res = await fetch(
+        `/api/master?type=manager&id=${encodeURIComponent(managerId)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) await loadMasterOverview();
+    } catch {}
+  };
+
   const handleCreateAgent = async (input: {
     name: string;
     username: string;
@@ -505,11 +641,11 @@ export default function CRMWorkspacePage() {
     if (sellerId === "master-admin") {
       nextSeller = {
         id: "master-admin",
-        name: "Master Admin",
-        role: "Master Admin",
+        name: user?.name || "Gerente",
+        role: "Gerente",
         avatar: "",
-        initials: "MA",
-        color: "from-emerald-600 to-teal-500",
+        initials: user?.initials || "GE",
+        color: "from-indigo-600 to-violet-500",
       };
     } else {
       const agent = agents.find((a) => a.id === sellerId);
@@ -691,6 +827,7 @@ export default function CRMWorkspacePage() {
         dealsCount={deals.length}
         userMode={user.mode}
         agentsCount={agents.length}
+        companiesCount={companies.length}
       />
 
       {/* Main Content Area */}
@@ -711,7 +848,20 @@ export default function CRMWorkspacePage() {
         />
 
         <main className="flex-1 overflow-y-auto px-4 lg:px-8 pt-6 pb-20 md:pb-6">
-          {activeTab === "dashboard" && (
+          {activeTab === "master" && user.mode === "super_master" && (
+            <MasterDashboard
+              companies={companies}
+              managers={managers}
+              stats={masterStats}
+              onCreateCompany={handleCreateCompany}
+              onToggleCompany={handleToggleCompany}
+              onDeleteCompany={handleDeleteCompany}
+              onCreateManager={handleCreateManager}
+              onDeleteManager={handleDeleteManager}
+            />
+          )}
+
+          {activeTab === "dashboard" && user.mode !== "super_master" && (
             <SalesDashboard
               deals={deals}
               isDemo={user.mode === "demo"}
@@ -721,7 +871,7 @@ export default function CRMWorkspacePage() {
             />
           )}
 
-          {activeTab === "pipeline" && (
+          {activeTab === "pipeline" && user.mode !== "super_master" && (
             <KanbanBoard
               deals={deals}
               onMoveDeal={handleMoveDeal}
@@ -732,14 +882,14 @@ export default function CRMWorkspacePage() {
                 setNewDealDefaultStage(stageId);
                 setNewDealModalOpen(true);
               }}
-              agents={user.mode === "master" ? agents : []}
+              agents={user.mode === "manager" ? agents : []}
               onAssignAgent={
-                user.mode === "master" ? handleAssignAgent : undefined
+                user.mode === "manager" ? handleAssignAgent : undefined
               }
             />
           )}
 
-          {activeTab === "contacts" && (
+          {activeTab === "contacts" && user.mode !== "super_master" && (
             <ContactsDirectory
               deals={deals}
               onSelectDeal={(deal, tab) =>
@@ -748,7 +898,7 @@ export default function CRMWorkspacePage() {
             />
           )}
 
-          {activeTab === "agents" && user.mode === "master" && (
+          {activeTab === "agents" && user.mode === "manager" && (
             <AgentsManager
               agents={agents}
               deals={deals}
@@ -757,63 +907,67 @@ export default function CRMWorkspacePage() {
             />
           )}
 
-          {activeTab === "integrations" && user.mode !== "agent" && (
-            <EvolutionSettings
-              config={evolutionConfig}
-              onUpdateConfig={setEvolutionConfig}
-            />
-          )}
+          {activeTab === "integrations" &&
+            user.mode !== "agent" &&
+            user.mode !== "super_master" && (
+              <EvolutionSettings
+                config={evolutionConfig}
+                onUpdateConfig={setEvolutionConfig}
+              />
+            )}
         </main>
 
         {/* Simplified Mobile Bottom Navigation Bar */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 h-16 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-around px-2">
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-              activeTab === "dashboard"
-                ? "text-indigo-600 dark:text-indigo-400"
-                : "text-zinc-500"
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("pipeline")}
-            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-              activeTab === "pipeline"
-                ? "text-indigo-600 dark:text-indigo-400"
-                : "text-zinc-500"
-            }`}
-          >
-            <Kanban className="w-4 h-4" />
-            <span>Pipeline</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("contacts")}
-            className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-              activeTab === "contacts"
-                ? "text-indigo-600 dark:text-indigo-400"
-                : "text-zinc-500"
-            }`}
-          >
-            <Users2 className="w-4 h-4" />
-            <span>Clientes 360º</span>
-          </button>
-          {user.mode !== "agent" && (
+        {user.mode !== "super_master" && (
+          <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 h-16 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-around px-2">
             <button
-              onClick={() => setActiveTab("integrations")}
+              onClick={() => setActiveTab("dashboard")}
               className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
-                activeTab === "integrations"
+                activeTab === "dashboard"
                   ? "text-indigo-600 dark:text-indigo-400"
                   : "text-zinc-500"
               }`}
             >
-              <PlugZap className="w-4 h-4" />
-              <span>WhatsApp API</span>
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Dashboard</span>
             </button>
-          )}
-        </nav>
+            <button
+              onClick={() => setActiveTab("pipeline")}
+              className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+                activeTab === "pipeline"
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-zinc-500"
+              }`}
+            >
+              <Kanban className="w-4 h-4" />
+              <span>Pipeline</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("contacts")}
+              className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+                activeTab === "contacts"
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-zinc-500"
+              }`}
+            >
+              <Users2 className="w-4 h-4" />
+              <span>Clientes 360º</span>
+            </button>
+            {user.mode !== "agent" && (
+              <button
+                onClick={() => setActiveTab("integrations")}
+                className={`flex flex-col items-center gap-1 text-[10px] font-medium ${
+                  activeTab === "integrations"
+                    ? "text-indigo-600 dark:text-indigo-400"
+                    : "text-zinc-500"
+                }`}
+              >
+                <PlugZap className="w-4 h-4" />
+                <span>WhatsApp API</span>
+              </button>
+            )}
+          </nav>
+        )}
       </div>
 
       {/* Slide-Over 360º Client & WhatsApp Chat */}
@@ -824,8 +978,8 @@ export default function CRMWorkspacePage() {
         evolutionConfig={evolutionConfig}
         onUpdateStage={handleMoveDeal}
         onUpdateDeal={handleUpdateDeal}
-        agents={user.mode === "master" ? agents : []}
-        onAssignAgent={user.mode === "master" ? handleAssignAgent : undefined}
+        agents={user.mode === "manager" ? agents : []}
+        onAssignAgent={user.mode === "manager" ? handleAssignAgent : undefined}
         onSaveNotes={handleSaveNotes}
         onToggleTask={handleToggleTask}
         onAddTask={handleAddTask}

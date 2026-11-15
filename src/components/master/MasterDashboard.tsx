@@ -1,0 +1,538 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  Building2,
+  UserPlus,
+  Users,
+  ShieldCheck,
+  Briefcase,
+  Trash2,
+  Power,
+  KeyRound,
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  TrendingUp,
+} from "lucide-react";
+import { CompanyAccount, ManagerAccount } from "@/types/crm";
+
+export interface MasterOverviewStats {
+  totalCompanies: number;
+  activeCompanies: number;
+  totalManagers: number;
+  totalAgents: number;
+  totalDeals: number;
+  totalPipelineValue: number;
+  perCompany: Array<{
+    companyId: string;
+    managersCount: number;
+    agentsCount: number;
+    dealsCount: number;
+    pipelineValue: number;
+  }>;
+}
+
+interface MasterDashboardProps {
+  companies: CompanyAccount[];
+  managers: ManagerAccount[];
+  stats: MasterOverviewStats;
+  onCreateCompany: (input: {
+    name: string;
+    document?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  onToggleCompany: (companyId: string) => Promise<void>;
+  onDeleteCompany: (companyId: string) => Promise<void>;
+  onCreateManager: (input: {
+    companyId: string;
+    name: string;
+    username: string;
+    password: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  onDeleteManager: (managerId: string) => Promise<void>;
+}
+
+export function MasterDashboard({
+  companies,
+  managers,
+  stats,
+  onCreateCompany,
+  onToggleCompany,
+  onDeleteCompany,
+  onCreateManager,
+  onDeleteManager,
+}: MasterDashboardProps) {
+  const [companyName, setCompanyName] = useState("");
+  const [companyDoc, setCompanyDoc] = useState("");
+  const [compLoading, setCompLoading] = useState(false);
+  const [compMsg, setCompMsg] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  const [selectedCompanyId, setSelectedCompanyId] = useState(
+    companies[0]?.id || "company-default"
+  );
+  const [mgrName, setMgrName] = useState("");
+  const [mgrUsername, setMgrUsername] = useState("");
+  const [mgrPassword, setMgrPassword] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [mgrLoading, setMgrLoading] = useState(false);
+  const [mgrMsg, setMgrMsg] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  const handleAddCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCompMsg(null);
+    setCompLoading(true);
+    try {
+      const res = await onCreateCompany({
+        name: companyName,
+        document: companyDoc,
+      });
+      if (!res.ok) {
+        setCompMsg({
+          type: "err",
+          text: res.error || "Erro ao criar empresa.",
+        });
+        return;
+      }
+      setCompMsg({
+        type: "ok",
+        text: `Empresa "${companyName.trim()}" criada com sucesso!`,
+      });
+      setCompanyName("");
+      setCompanyDoc("");
+    } finally {
+      setCompLoading(false);
+    }
+  };
+
+  const handleAddManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMgrMsg(null);
+    setMgrLoading(true);
+    try {
+      const targetCompanyId = selectedCompanyId || companies[0]?.id || "";
+      const res = await onCreateManager({
+        companyId: targetCompanyId,
+        name: mgrName,
+        username: mgrUsername,
+        password: mgrPassword,
+      });
+      if (!res.ok) {
+        setMgrMsg({
+          type: "err",
+          text: res.error || "Erro ao criar gerente.",
+        });
+        return;
+      }
+      setMgrMsg({
+        type: "ok",
+        text: `Gerente "${mgrName.trim()}" criado com sucesso!`,
+      });
+      setMgrName("");
+      setMgrUsername("");
+      setMgrPassword("");
+    } finally {
+      setMgrLoading(false);
+    }
+  };
+
+  const kpis = [
+    {
+      label: "Empresas na Plataforma",
+      value: `${stats.totalCompanies}`,
+      sub: `${stats.activeCompanies} ativa(s)`,
+      icon: Building2,
+      color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
+    },
+    {
+      label: "Gerentes Cadastrados",
+      value: `${stats.totalManagers}`,
+      sub: "Administradores de empresa",
+      icon: ShieldCheck,
+      color: "text-indigo-500 bg-indigo-500/10 border-indigo-500/20",
+    },
+    {
+      label: "Atendentes Totais",
+      value: `${stats.totalAgents}`,
+      sub: "Usuários de atendimento",
+      icon: Users,
+      color: "text-sky-500 bg-sky-500/10 border-sky-500/20",
+    },
+    {
+      label: "Leads / Pipeline Global",
+      value: `${stats.totalDeals}`,
+      sub: stats.totalPipelineValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        maximumFractionDigits: 0,
+      }),
+      icon: TrendingUp,
+      color: "text-amber-500 bg-amber-500/10 border-amber-500/20",
+    },
+  ];
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto pb-10">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((kpi) => {
+          const Icon = kpi.icon;
+          return (
+            <div
+              key={kpi.label}
+              className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-5 shadow-sm"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  {kpi.label}
+                </span>
+                <div
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center ${kpi.color}`}
+                >
+                  <Icon className="w-4 h-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                {kpi.value}
+              </p>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                {kpi.sub}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Forms: Nova Empresa + Novo Gerente */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cadastrar Empresa */}
+        <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Cadastrar Nova Empresa
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Cada empresa possui seu próprio funil, Evolution API e equipe.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddCompany} className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Nome da Empresa
+              </label>
+              <input
+                type="text"
+                required
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Ex: TechSolar Energia"
+                className="w-full rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                CNPJ ou Segmento (opcional)
+              </label>
+              <input
+                type="text"
+                value={companyDoc}
+                onChange={(e) => setCompanyDoc(e.target.value)}
+                placeholder="Ex: 12.345.678/0001-90 • Energia"
+                className="w-full rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {compMsg && (
+              <p
+                className={`text-xs flex items-center gap-1.5 ${
+                  compMsg.type === "err" ? "text-rose-500" : "text-emerald-500"
+                }`}
+              >
+                {compMsg.type === "err" ? (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                )}
+                {compMsg.text}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={compLoading}
+              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+            >
+              <Building2 className="w-4 h-4" />
+              {compLoading ? "Criando..." : "Adicionar Empresa"}
+            </button>
+          </form>
+        </div>
+
+        {/* Criar Usuário Gerente */}
+        <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500">
+              <UserPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Criar Usuário Gerente para Empresa
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                O Gerente administra a empresa, conecta a Evolution API e cria
+                atendentes.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddManager} className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Empresa Vinculada
+              </label>
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                required
+                className="w-full rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+              >
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {!c.active ? "(Pausada)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                  Nome do Gerente
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={mgrName}
+                  onChange={(e) => setMgrName(e.target.value)}
+                  placeholder="Ex: Carlos Gerente"
+                  className="w-full rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                  Login (usuário)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={mgrUsername}
+                  onChange={(e) => setMgrUsername(e.target.value)}
+                  placeholder="Ex: carlos.gerente"
+                  className="w-full rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Senha de Acesso
+              </label>
+              <div className="relative">
+                <input
+                  type={showPwd ? "text" : "password"}
+                  required
+                  minLength={4}
+                  value={mgrPassword}
+                  onChange={(e) => setMgrPassword(e.target.value)}
+                  placeholder="Mínimo 4 caracteres"
+                  className="w-full rounded-xl pl-3.5 pr-9 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  {showPwd ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {mgrMsg && (
+              <p
+                className={`text-xs flex items-center gap-1.5 ${
+                  mgrMsg.type === "err" ? "text-rose-500" : "text-emerald-500"
+                }`}
+              >
+                {mgrMsg.type === "err" ? (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                )}
+                {mgrMsg.text}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={mgrLoading || companies.length === 0}
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+              {mgrLoading ? "Criando..." : "Criar Usuário Gerente"}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Lista de Empresas */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Briefcase className="w-4 h-4 text-emerald-500" />
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Empresas Cadastradas ({companies.length})
+            </h3>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {companies.map((company) => {
+            const cStats = stats.perCompany.find(
+              (s) => s.companyId === company.id
+            );
+            return (
+              <div
+                key={company.id}
+                className="p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                      {company.name}
+                    </p>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        company.active
+                          ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                          : "bg-zinc-500/15 text-zinc-500"
+                      }`}
+                    >
+                      {company.active ? "Ativa" : "Pausada"}
+                    </span>
+                  </div>
+                  {company.document && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
+                      {company.document}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5">
+                    {cStats?.managersCount || 0} gerente(s) •{" "}
+                    {cStats?.agentsCount || 0} atendente(s) •{" "}
+                    {cStats?.dealsCount || 0} lead(s)
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => onToggleCompany(company.id)}
+                    title={
+                      company.active ? "Pausar empresa" : "Reativar empresa"
+                    }
+                    className={`p-2 rounded-lg transition-colors ${
+                      company.active
+                        ? "text-emerald-500 hover:bg-emerald-500/10"
+                        : "text-zinc-400 hover:bg-zinc-500/10"
+                    }`}
+                  >
+                    <Power className="w-4 h-4" />
+                  </button>
+                  {company.id !== "company-default" && (
+                    <button
+                      onClick={() => onDeleteCompany(company.id)}
+                      title="Excluir empresa"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Lista de Gerentes */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldCheck className="w-4 h-4 text-indigo-500" />
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Gerentes Cadastrados ({managers.length})
+          </h3>
+        </div>
+
+        {managers.length === 0 ? (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 py-4 text-center">
+            Nenhum gerente cadastrado ainda. Use o formulário acima para criar o
+            primeiro gerente.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {managers.map((mgr) => (
+              <div
+                key={mgr.id}
+                className="p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${mgr.color} text-white text-xs font-bold flex items-center justify-center shrink-0`}
+                  >
+                    {mgr.initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                      {mgr.name}
+                    </p>
+                    <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium truncate">
+                      {mgr.companyName}
+                    </p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 truncate">
+                      <KeyRound className="w-3 h-3 shrink-0" />
+                      Login: <span className="font-mono">{mgr.username}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => onDeleteManager(mgr.id)}
+                  title="Remover gerente"
+                  className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
