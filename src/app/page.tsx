@@ -17,6 +17,7 @@ import {
   Deal,
   DealTask,
   EvolutionConfig,
+  GlobalEvolutionServer,
   ManagerAccount,
   Seller,
   StageId,
@@ -76,6 +77,9 @@ export default function CRMWorkspacePage() {
 
   const [companies, setCompanies] = useState<CompanyAccount[]>([]);
   const [managers, setManagers] = useState<ManagerAccount[]>([]);
+  const [evolutionServer, setEvolutionServer] = useState<GlobalEvolutionServer>(
+    { baseUrl: "", apiKey: "", webhookUrl: "" }
+  );
   const [masterStats, setMasterStats] = useState<MasterOverviewStats>({
     totalCompanies: 0,
     activeCompanies: 0,
@@ -94,10 +98,12 @@ export default function CRMWorkspacePage() {
         companies?: CompanyAccount[];
         managers?: ManagerAccount[];
         stats?: MasterOverviewStats;
+        evolutionServer?: GlobalEvolutionServer;
       };
       if (Array.isArray(data.companies)) setCompanies(data.companies);
       if (Array.isArray(data.managers)) setManagers(data.managers);
       if (data.stats) setMasterStats(data.stats);
+      if (data.evolutionServer) setEvolutionServer(data.evolutionServer);
     } catch {}
   }, []);
 
@@ -646,6 +652,26 @@ export default function CRMWorkspacePage() {
     } catch {}
   };
 
+  const handleSaveEvolutionServer = async (
+    srv: GlobalEvolutionServer
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "saveEvolutionServer", ...srv }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao salvar servidor." };
+      }
+      await loadMasterOverview();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
   const handleCreateAgent = async (input: {
     name: string;
     username: string;
@@ -907,6 +933,8 @@ export default function CRMWorkspacePage() {
               onCreateManager={handleCreateManager}
               onUpdateManager={handleUpdateManager}
               onDeleteManager={handleDeleteManager}
+              evolutionServer={evolutionServer}
+              onSaveEvolutionServer={handleSaveEvolutionServer}
             />
           )}
 
@@ -962,6 +990,7 @@ export default function CRMWorkspacePage() {
               <EvolutionSettings
                 config={evolutionConfig}
                 onUpdateConfig={setEvolutionConfig}
+                companyOnly={user.mode === "manager"}
               />
             )}
         </main>

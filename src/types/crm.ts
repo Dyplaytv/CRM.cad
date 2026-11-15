@@ -103,6 +103,13 @@ export interface EvolutionConfig {
   webhookUrl: string;
   status: "connected" | "disconnected" | "connecting";
   phoneConnected?: string;
+  managedByMaster?: boolean;
+}
+
+export interface GlobalEvolutionServer {
+  baseUrl: string;
+  apiKey: string;
+  webhookUrl: string;
 }
 
 export interface AuthUser {
@@ -121,6 +128,7 @@ export interface CompanyAccount {
   id: string;
   name: string;
   document?: string;
+  instanceName?: string;
   active: boolean;
   createdAt: string;
 }

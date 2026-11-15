@@ -30,11 +30,13 @@ import {
 interface EvolutionSettingsProps {
   config: EvolutionConfig;
   onUpdateConfig: (next: EvolutionConfig) => void;
+  companyOnly?: boolean;
 }
 
 export function EvolutionSettings({
   config,
   onUpdateConfig,
+  companyOnly = false,
 }: EvolutionSettingsProps) {
   const [loadingQr, setLoadingQr] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
@@ -59,9 +61,10 @@ export function EvolutionSettings({
   );
 
   const isRealServer =
-    Boolean(config.baseUrl?.trim()) &&
-    !config.baseUrl.includes("sua-evolution-api.com") &&
-    Boolean(config.apiKey?.trim());
+    Boolean(config.managedByMaster) ||
+    (Boolean(config.baseUrl?.trim()) &&
+      !config.baseUrl.includes("sua-evolution-api.com") &&
+      Boolean(config.apiKey?.trim()));
 
   const handleGenerateQrCode = async () => {
     setFeedback(null);
@@ -307,159 +310,219 @@ export function EvolutionSettings({
 
       {/* Main Grid: Credentials & Webhook Left | QR Code Connect Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Credenciais da Evolution API + Webhooks */}
+        {/* Left Column: Modo Empresa (apenas instância) OU Credenciais Master */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-7 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 p-6 drop-shadow-sm space-y-5"
         >
-          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
-            <div>
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                <Server className="w-4 h-4 text-indigo-500" />
-                Parâmetros do Servidor Evolution API
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Configure os endpoints REST utilizados pelo módulo de chat 360º
-              </p>
-            </div>
-            <span className="text-[10px] font-mono px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              v2.3.x Ready
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div className="sm:col-span-2">
-              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-indigo-500" />
-                URL Base da Evolution API
-              </label>
-              <input
-                type="text"
-                value={config.baseUrl}
-                onChange={(e) =>
-                  onUpdateConfig({ ...config, baseUrl: e.target.value })
-                }
-                placeholder="https://api.sua-evolution-api.com.br"
-                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                Nome da Instância (instanceName)
-              </label>
-              <input
-                type="text"
-                value={config.instanceName}
-                onChange={(e) =>
-                  onUpdateConfig({ ...config, instanceName: e.target.value })
-                }
-                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
-                Global / Instance API Key
-              </label>
-              <input
-                type="password"
-                value={config.apiKey}
-                onChange={(e) =>
-                  onUpdateConfig({ ...config, apiKey: e.target.value })
-                }
-                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div className="sm:col-span-2 pt-2">
-              <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
-                <Webhook className="w-3.5 h-3.5 text-emerald-500" />
-                Endpoint local de Webhook (Recebimento em Tempo Real)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={config.webhookUrl}
-                  className="flex-1 rounded-xl px-3.5 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyWebhook}
-                  className="px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 text-xs font-semibold flex items-center gap-1.5"
-                >
-                  {copiedWebhook ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      Copiado
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      Copiar
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyWebhookToEvolution}
-                  disabled={savingWebhook || !isRealServer}
-                  title="Enviar configuração de Webhook automaticamente para a Evolution API v2.3"
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold whitespace-nowrap"
-                >
-                  {savingWebhook ? "Aplicando..." : "Aplicar na Evolution"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Endpoints Documentation & Live Test */}
-          <div className="p-4 rounded-xl bg-zinc-950 text-zinc-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold flex items-center gap-1.5 text-emerald-400">
-                <Terminal className="w-4 h-4" />
-                Rotas Mapeadas no CRM
-              </span>
-              <button
-                type="button"
-                onClick={handleTestWebhookEndpoint}
-                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white flex items-center gap-1"
-              >
-                <Radio className="w-3 h-3" />
-                Disparar Webhook Teste
-              </button>
-            </div>
-
-            <div className="space-y-1.5 font-mono text-[11px]">
-              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
-                <span className="text-emerald-400">POST</span>
-                <span className="text-zinc-300 truncate max-w-[360px]">
-                  {config.baseUrl}/message/sendText/{config.instanceName}
+          {companyOnly ? (
+            <>
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    Instância WhatsApp Exclusiva da Empresa
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Conecte o WhatsApp da sua empresa escaneando o QR Code ao lado.
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  Gerenciada pelo Master
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
-                <span className="text-sky-400">GET</span>
-                <span className="text-zinc-300 truncate max-w-[360px]">
-                  {config.baseUrl}/instance/connect/{config.instanceName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
-                <span className="text-violet-400">WEBHOOK</span>
-                <span className="text-zinc-300 truncate max-w-[360px]">
-                  POST /api/webhooks/evolution (messages.upsert)
-                </span>
-              </div>
-            </div>
 
-            {webhookTestResult && (
-              <pre className="p-2.5 rounded-lg bg-black/60 text-[10px] text-emerald-300 overflow-x-auto">
-                {webhookTestResult}
-              </pre>
-            )}
-          </div>
+              {!config.managedByMaster && (
+                <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Servidor Evolution API ainda não configurado</p>
+                    <p className="text-[11px] opacity-90 mt-0.5">
+                      O Master da plataforma ainda não configurou o servidor da Evolution API. Solicite ao Master para liberar a geração de QR Code.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                    Identificador da Instância
+                  </span>
+                  <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                    {config.instanceName || "Instância automática"}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  Esta instância é exclusiva da sua empresa. Todas as conversas recebidas e enviadas por este número ficam isoladas no seu workspace.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/80 dark:border-zinc-800 space-y-2.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <p className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-indigo-500" />
+                  Como conectar o WhatsApp da empresa:
+                </p>
+                <ol className="list-decimal list-inside space-y-1.5 text-[11px]">
+                  <li>Clique no botão <strong>Gerar QR Code</strong> no topo desta página.</li>
+                  <li>Abra o WhatsApp no celular da empresa e acesse <strong>Dispositivos conectados</strong>.</li>
+                  <li>Toque em <strong>Conectar dispositivo</strong> e aponte a câmera para o QR Code ao lado.</li>
+                  <li>Após escanear, clique em <strong>Verificar Status</strong> para confirmar que ficou online.</li>
+                </ol>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <Server className="w-4 h-4 text-indigo-500" />
+                    Parâmetros do Servidor Evolution API
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Configure os endpoints REST utilizados pelo módulo de chat 360º
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  v2.3.x Ready
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                    URL Base da Evolution API
+                  </label>
+                  <input
+                    type="text"
+                    value={config.baseUrl}
+                    onChange={(e) =>
+                      onUpdateConfig({ ...config, baseUrl: e.target.value })
+                    }
+                    placeholder="https://api.sua-evolution-api.com.br"
+                    className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    Nome da Instância (instanceName)
+                  </label>
+                  <input
+                    type="text"
+                    value={config.instanceName}
+                    onChange={(e) =>
+                      onUpdateConfig({ ...config, instanceName: e.target.value })
+                    }
+                    className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                    Global / Instance API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={config.apiKey}
+                    onChange={(e) =>
+                      onUpdateConfig({ ...config, apiKey: e.target.value })
+                    }
+                    className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 pt-2">
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                    <Webhook className="w-3.5 h-3.5 text-emerald-500" />
+                    Endpoint local de Webhook (Recebimento em Tempo Real)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={config.webhookUrl}
+                      className="flex-1 rounded-xl px-3.5 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyWebhook}
+                      className="px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800 text-xs font-semibold flex items-center gap-1.5"
+                    >
+                      {copiedWebhook ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          Copiado
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          Copiar
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyWebhookToEvolution}
+                      disabled={savingWebhook || !isRealServer}
+                      title="Enviar configuração de Webhook automaticamente para a Evolution API v2.3"
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold whitespace-nowrap"
+                    >
+                      {savingWebhook ? "Aplicando..." : "Aplicar na Evolution"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Endpoints Documentation & Live Test */}
+              <div className="p-4 rounded-xl bg-zinc-950 text-zinc-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold flex items-center gap-1.5 text-emerald-400">
+                    <Terminal className="w-4 h-4" />
+                    Rotas Mapeadas no CRM
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTestWebhookEndpoint}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white flex items-center gap-1"
+                  >
+                    <Radio className="w-3 h-3" />
+                    Disparar Webhook Teste
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 font-mono text-[11px]">
+                  <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                    <span className="text-emerald-400">POST</span>
+                    <span className="text-zinc-300 truncate max-w-[360px]">
+                      {config.baseUrl}/message/sendText/{config.instanceName}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                    <span className="text-sky-400">GET</span>
+                    <span className="text-zinc-300 truncate max-w-[360px]">
+                      {config.baseUrl}/instance/connect/{config.instanceName}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-zinc-900">
+                    <span className="text-violet-400">WEBHOOK</span>
+                    <span className="text-zinc-300 truncate max-w-[360px]">
+                      POST /api/webhooks/evolution (messages.upsert)
+                    </span>
+                  </div>
+                </div>
+
+                {webhookTestResult && (
+                  <pre className="p-2.5 rounded-lg bg-black/60 text-[10px] text-emerald-300 overflow-x-auto">
+                    {webhookTestResult}
+                  </pre>
+                )}
+              </div>
+            </>
+          )}
         </motion.div>
 
         {/* Right Column: QR Code Viewer (GET /instance/connect) */}

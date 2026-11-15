@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/authSession";
 import {
+  getCompanyInstanceName,
+  getGlobalEvolutionServer,
   getWorkspaceDeals,
   getWorkspaceEvolutionConfig,
   setWorkspaceDeals,
@@ -8,6 +10,26 @@ import {
   upsertWorkspaceDeal,
 } from "@/lib/crmStore";
 import { Deal, EvolutionConfig } from "@/types/crm";
+
+function buildTenantEvolutionConfig(
+  companyId: string,
+  companyEvo: EvolutionConfig | null
+): EvolutionConfig {
+  const globalServer = getGlobalEvolutionServer();
+  const instanceName = getCompanyInstanceName(companyId);
+  return {
+    baseUrl: "",
+    apiKey: "",
+    instanceName,
+    webhookUrl:
+      globalServer.webhookUrl ||
+      companyEvo?.webhookUrl ||
+      "https://crm.cadtech.com.br/api/webhooks/evolution",
+    status: companyEvo?.status || "disconnected",
+    phoneConnected: companyEvo?.phoneConnected,
+    managedByMaster: Boolean(globalServer.baseUrl && globalServer.apiKey),
+  };
+}
 
 export async function GET(req: NextRequest) {
   const user = getSessionUser(req);
@@ -21,7 +43,10 @@ export async function GET(req: NextRequest) {
 
   const companyId = user.companyId || "company-default";
   const allDeals = getWorkspaceDeals(companyId);
-  const evolutionConfig = getWorkspaceEvolutionConfig(companyId);
+  const evolutionConfig = buildTenantEvolutionConfig(
+    companyId,
+    getWorkspaceEvolutionConfig(companyId)
+  );
 
   if (user.mode === "agent") {
     const agentDeals = allDeals.filter(
@@ -62,7 +87,13 @@ export async function PUT(req: NextRequest) {
       setWorkspaceDeals(companyId, body.deals);
     }
     if (body.evolutionConfig) {
-      setWorkspaceEvolutionConfig(companyId, body.evolutionConfig);
+      const existing = getWorkspaceEvolutionConfig(companyId);
+      setWorkspaceEvolutionConfig(companyId, {
+        ...body.evolutionConfig,
+        baseUrl: existing?.baseUrl || "",
+        apiKey: existing?.apiKey || "",
+        instanceName: getCompanyInstanceName(companyId),
+      });
     }
 
     return NextResponse.json({ ok: true });

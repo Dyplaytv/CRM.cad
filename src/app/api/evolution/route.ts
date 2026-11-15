@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { EvolutionConfig } from "@/types/crm";
+import { getSessionUser } from "@/lib/authSession";
+import {
+  getCompanyInstanceName,
+  getGlobalEvolutionServer,
+} from "@/lib/crmStore";
 
 interface EvolutionProxyBody {
   action: "sendText" | "sendMedia" | "connect" | "status" | "logout" | "setWebhook";
@@ -26,16 +31,34 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as EvolutionProxyBody;
     const { action, config, payload } = body;
 
-    const baseUrl = normalizeBaseUrl(config?.baseUrl || "");
-    const apiKey = (config?.apiKey || "").trim();
-    const instanceName = encodeURIComponent((config?.instanceName || "").trim());
+    const user = getSessionUser(req);
+    const isTenantUser =
+      user && (user.mode === "manager" || user.mode === "agent");
+    const globalServer = isTenantUser ? getGlobalEvolutionServer() : null;
+
+    const baseUrl = normalizeBaseUrl(
+      isTenantUser ? globalServer?.baseUrl || "" : config?.baseUrl || ""
+    );
+    const apiKey = (
+      isTenantUser ? globalServer?.apiKey || "" : config?.apiKey || ""
+    ).trim();
+    const rawInstance = isTenantUser
+      ? getCompanyInstanceName(user.companyId || "company-default")
+      : (config?.instanceName || "").trim();
+    const instanceName = encodeURIComponent(rawInstance);
+    const resolvedWebhookUrl = (
+      isTenantUser
+        ? globalServer?.webhookUrl || config?.webhookUrl || ""
+        : config?.webhookUrl || ""
+    ).trim();
 
     if (!baseUrl || !apiKey || !instanceName) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Preencha URL Base, Nome da Instância e API Key da Evolution API v2.3.",
+          error: isTenantUser
+            ? "O Master da plataforma ainda não configurou o servidor da Evolution API."
+            : "Preencha URL Base, Nome da Instância e API Key da Evolution API v2.3.",
         },
         { status: 400 }
       );
@@ -67,7 +90,7 @@ export async function POST(req: NextRequest) {
           method: "POST",
           headers,
           body: JSON.stringify({
-            instanceName: config.instanceName.trim(),
+            instanceName: rawInstance,
             integration: "WHATSAPP-BAILEYS",
             qrcode: true,
           }),
@@ -87,6 +110,28 @@ export async function POST(req: NextRequest) {
             },
             { status: createRes.status }
           );
+        }
+
+        // Registra o webhook automaticamente ao criar instância da empresa
+        if (resolvedWebhookUrl) {
+          await fetch(`${baseUrl}/webhook/set/${instanceName}`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              webhook: {
+                enabled: true,
+                url: resolvedWebhookUrl,
+                webhookByEvents: false,
+                webhookBase64: true,
+                events: [
+                  "MESSAGES_UPSERT",
+                  "MESSAGES_UPDATE",
+                  "CONNECTION_UPDATE",
+                  "QRCODE_UPDATED",
+                ],
+              },
+            }),
+          }).catch(() => {});
         }
 
         if (createData?.qrcode?.base64 || createData?.qrcode?.code) {
@@ -131,7 +176,7 @@ export async function POST(req: NextRequest) {
       const webhookBody = {
         webhook: {
           enabled: true,
-          url: config.webhookUrl.trim(),
+          url: resolvedWebhookUrl,
           webhookByEvents: false,
           webhookBase64: true,
           events: [

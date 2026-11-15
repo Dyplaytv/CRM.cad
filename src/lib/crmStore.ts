@@ -6,6 +6,7 @@ import {
   CompanyAccount,
   Deal,
   EvolutionConfig,
+  GlobalEvolutionServer,
   ManagerAccount,
 } from "@/types/crm";
 
@@ -32,6 +33,7 @@ const MANAGERS_FILE = path.join(DATA_DIR, "managers.json");
 const AGENTS_FILE = path.join(DATA_DIR, "agents.json");
 const WORKSPACES_FILE = path.join(DATA_DIR, "workspaces.json");
 const LEGACY_WORKSPACE_FILE = path.join(DATA_DIR, "workspace.json");
+const MASTER_EVOLUTION_FILE = path.join(DATA_DIR, "master-evolution.json");
 
 const AVATAR_COLORS = [
   "from-indigo-500 to-violet-500",
@@ -47,6 +49,7 @@ const globalForCrm = globalThis as unknown as {
   __nexusManagers?: StoredManager[];
   __nexusAgents?: StoredAgent[];
   __nexusWorkspaces?: WorkspacesMap;
+  __nexusMasterEvolution?: GlobalEvolutionServer;
 };
 
 function ensureDataDir() {
@@ -97,6 +100,7 @@ function loadCompanies(): CompanyAccount[] {
     id: DEFAULT_COMPANY_ID,
     name: "Empresa Principal",
     document: "",
+    instanceName: "nexus-master-01",
     active: true,
     createdAt: new Date().toISOString(),
   };
@@ -121,6 +125,30 @@ export function getCompanyById(id: string): CompanyAccount | undefined {
   return loadCompanies().find((c) => c.id === id);
 }
 
+function buildInstanceSlug(name: string): string {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 18);
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `nexus-${slug || "emp"}-${suffix}`;
+}
+
+export function getCompanyInstanceName(companyId = DEFAULT_COMPANY_ID): string {
+  if (companyId === DEFAULT_COMPANY_ID) {
+    const ws = loadWorkspaces()[DEFAULT_COMPANY_ID]?.evolutionConfig;
+    return ws?.instanceName?.trim() || "nexus-master-01";
+  }
+  const comp = getCompanyById(companyId);
+  if (comp?.instanceName) return comp.instanceName;
+  const ws = loadWorkspaces()[companyId]?.evolutionConfig;
+  if (ws?.instanceName?.trim()) return ws.instanceName.trim();
+  return `nexus-${companyId.replace(/[^a-zA-Z0-9]/g, "").slice(-8)}`;
+}
+
 export function createCompany(input: {
   name: string;
   document?: string;
@@ -137,6 +165,7 @@ export function createCompany(input: {
     id: `comp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name,
     document: (input.document || "").trim(),
+    instanceName: buildInstanceSlug(name),
     active: true,
     createdAt: new Date().toISOString(),
   };
@@ -595,9 +624,67 @@ export function setWorkspaceEvolutionConfig(
   saveWorkspaces({ ...all, [companyId]: { ...current, evolutionConfig } });
 }
 
+export function getGlobalEvolutionServer(): GlobalEvolutionServer {
+  if (globalForCrm.__nexusMasterEvolution) {
+    return globalForCrm.__nexusMasterEvolution;
+  }
+  try {
+    if (fs.existsSync(MASTER_EVOLUTION_FILE)) {
+      const raw = fs.readFileSync(MASTER_EVOLUTION_FILE, "utf-8");
+      const parsed = JSON.parse(raw) as Partial<GlobalEvolutionServer>;
+      globalForCrm.__nexusMasterEvolution = {
+        baseUrl: (parsed.baseUrl || "").trim(),
+        apiKey: (parsed.apiKey || "").trim(),
+        webhookUrl: (parsed.webhookUrl || "").trim(),
+      };
+      return globalForCrm.__nexusMasterEvolution;
+    }
+  } catch {}
+
+  // Migra automaticamente a configuração da empresa padrão se existir
+  const legacyEvo = loadWorkspaces()[DEFAULT_COMPANY_ID]?.evolutionConfig;
+  const migrated: GlobalEvolutionServer = {
+    baseUrl: legacyEvo?.baseUrl?.trim() || "",
+    apiKey: legacyEvo?.apiKey?.trim() || "",
+    webhookUrl: legacyEvo?.webhookUrl?.trim() || "",
+  };
+  globalForCrm.__nexusMasterEvolution = migrated;
+  if (migrated.baseUrl || migrated.apiKey) {
+    setGlobalEvolutionServer(migrated);
+  }
+  return migrated;
+}
+
+export function setGlobalEvolutionServer(server: GlobalEvolutionServer) {
+  const normalized: GlobalEvolutionServer = {
+    baseUrl: (server.baseUrl || "").trim().replace(/\/+$/, ""),
+    apiKey: (server.apiKey || "").trim(),
+    webhookUrl: (server.webhookUrl || "").trim(),
+  };
+  globalForCrm.__nexusMasterEvolution = normalized;
+  try {
+    ensureDataDir();
+    fs.writeFileSync(
+      MASTER_EVOLUTION_FILE,
+      JSON.stringify(normalized, null, 2),
+      "utf-8"
+    );
+  } catch {}
+}
+
 export function findEvolutionConfigByInstance(
   instanceName: string
 ): EvolutionConfig | null {
+  const globalServer = getGlobalEvolutionServer();
+  if (globalServer.baseUrl && globalServer.apiKey) {
+    return {
+      baseUrl: globalServer.baseUrl,
+      apiKey: globalServer.apiKey,
+      instanceName: instanceName.trim(),
+      webhookUrl: globalServer.webhookUrl,
+      status: "connected",
+    };
+  }
   const all = loadWorkspaces();
   const target = instanceName.trim().toLowerCase();
   for (const ws of Object.values(all)) {

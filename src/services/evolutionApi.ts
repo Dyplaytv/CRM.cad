@@ -38,6 +38,7 @@ export interface EvolutionWebhookPayload {
 }
 
 function isDemoConfig(config: EvolutionConfig): boolean {
+  if (config.managedByMaster) return false;
   return (
     !config.baseUrl?.trim() ||
     config.baseUrl.includes("sua-evolution-api.com") ||

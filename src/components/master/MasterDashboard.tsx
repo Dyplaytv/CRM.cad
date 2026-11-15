@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Building2,
   UserPlus,
@@ -18,8 +18,15 @@ import {
   Pencil,
   Check,
   X,
+  Server,
+  Globe,
+  Webhook,
 } from "lucide-react";
-import { CompanyAccount, ManagerAccount } from "@/types/crm";
+import {
+  CompanyAccount,
+  GlobalEvolutionServer,
+  ManagerAccount,
+} from "@/types/crm";
 
 export interface MasterOverviewStats {
   totalCompanies: number;
@@ -67,6 +74,10 @@ interface MasterDashboardProps {
     }
   ) => Promise<{ ok: boolean; error?: string }>;
   onDeleteManager: (managerId: string) => Promise<void>;
+  evolutionServer: GlobalEvolutionServer;
+  onSaveEvolutionServer: (
+    srv: GlobalEvolutionServer
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export function MasterDashboard({
@@ -80,6 +91,8 @@ export function MasterDashboard({
   onCreateManager,
   onUpdateManager,
   onDeleteManager,
+  evolutionServer,
+  onSaveEvolutionServer,
 }: MasterDashboardProps) {
   const [companyName, setCompanyName] = useState("");
   const [companyDoc, setCompanyDoc] = useState("");
@@ -117,6 +130,45 @@ export function MasterDashboard({
     password: "",
   });
   const [editManagerError, setEditManagerError] = useState<string | null>(null);
+
+  const [srvForm, setSrvForm] = useState<GlobalEvolutionServer>(evolutionServer);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [srvSaving, setSrvSaving] = useState(false);
+  const [srvMsg, setSrvMsg] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setSrvForm({
+      baseUrl: evolutionServer.baseUrl || "",
+      apiKey: evolutionServer.apiKey || "",
+      webhookUrl:
+        evolutionServer.webhookUrl ||
+        (typeof window !== "undefined"
+          ? `${window.location.origin}/api/webhooks/evolution`
+          : ""),
+    });
+  }, [evolutionServer]);
+
+  const handleSaveEvolution = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSrvMsg(null);
+    setSrvSaving(true);
+    const res = await onSaveEvolutionServer(srvForm);
+    setSrvSaving(false);
+    if (!res.ok) {
+      setSrvMsg({
+        type: "err",
+        text: res.error || "Não foi possível salvar o servidor.",
+      });
+    } else {
+      setSrvMsg({
+        type: "ok",
+        text: "Configurações globais da Evolution API salvas com sucesso.",
+      });
+    }
+  };
 
   const mgrNameInputRef = useRef<HTMLInputElement>(null);
 
@@ -300,6 +352,131 @@ export function MasterDashboard({
             </div>
           );
         })}
+      </div>
+
+      {/* Servidor Evolution API Global (Master) */}
+      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/90 p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-500">
+              <Server className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Servidor Evolution API v2.3 (Global)
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Credenciais compartilhadas pela plataforma. As empresas geram apenas o QR Code de sua instância exclusiva.
+              </p>
+            </div>
+          </div>
+          <span
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+              srvForm.baseUrl && srvForm.apiKey
+                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+            }`}
+          >
+            {srvForm.baseUrl && srvForm.apiKey
+              ? "Servidor Configurado"
+              : "Pendente de Configuração"}
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveEvolution} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-indigo-500" />
+              URL Base da Evolution API *
+            </label>
+            <input
+              type="text"
+              required
+              value={srvForm.baseUrl}
+              onChange={(e) =>
+                setSrvForm((p) => ({ ...p, baseUrl: e.target.value }))
+              }
+              placeholder="http://seu-servidor:8095"
+              className="w-full rounded-xl px-3.5 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+              Global API Key *
+            </label>
+            <div className="relative">
+              <input
+                type={showApiKey ? "text" : "password"}
+                required
+                value={srvForm.apiKey}
+                onChange={(e) =>
+                  setSrvForm((p) => ({ ...p, apiKey: e.target.value }))
+                }
+                placeholder="Sua Global API Key"
+                className="w-full rounded-xl pl-3.5 pr-9 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                {showApiKey ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1.5">
+              <Webhook className="w-3.5 h-3.5 text-emerald-500" />
+              URL do Webhook do CRM
+            </label>
+            <input
+              type="text"
+              value={srvForm.webhookUrl}
+              onChange={(e) =>
+                setSrvForm((p) => ({ ...p, webhookUrl: e.target.value }))
+              }
+              placeholder="https://seu-crm.com.br/api/webhooks/evolution"
+              className="w-full rounded-xl px-3.5 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-1">
+            {srvMsg ? (
+              <p
+                className={`text-xs flex items-center gap-1.5 ${
+                  srvMsg.type === "err" ? "text-rose-500" : "text-emerald-500"
+                }`}
+              >
+                {srvMsg.type === "err" ? (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                )}
+                {srvMsg.text}
+              </p>
+            ) : (
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Cada nova empresa recebe uma instância exclusiva automaticamente.
+              </span>
+            )}
+
+            <button
+              type="submit"
+              disabled={srvSaving}
+              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <Check className="w-4 h-4" />
+              {srvSaving ? "Salvando..." : "Salvar Servidor Evolution"}
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Forms: Nova Empresa + Novo Gerente */}
@@ -603,6 +780,11 @@ export function MasterDashboard({
                   {company.document && (
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
                       {company.document}
+                    </p>
+                  )}
+                  {company.instanceName && (
+                    <p className="text-[10px] font-mono text-indigo-500 dark:text-indigo-400 mt-0.5 truncate">
+                      Instância: {company.instanceName}
                     </p>
                   )}
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5">

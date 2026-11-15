@@ -5,9 +5,11 @@ import {
   createManager,
   deleteCompany,
   deleteManager,
+  getGlobalEvolutionServer,
   getMasterOverviewStats,
   listCompanies,
   listManagers,
+  setGlobalEvolutionServer,
   toggleCompanyActive,
   updateCompany,
   updateManager,
@@ -24,6 +26,7 @@ export async function GET(req: NextRequest) {
     companies: listCompanies(),
     managers: listManagers(),
     stats: getMasterOverviewStats(),
+    evolutionServer: getGlobalEvolutionServer(),
   });
 }
 
@@ -35,13 +38,32 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = (await req.json()) as {
-      action?: "createCompany" | "createManager" | "toggleCompany";
+      action?:
+        | "createCompany"
+        | "createManager"
+        | "toggleCompany"
+        | "saveEvolutionServer";
       name?: string;
       document?: string;
       companyId?: string;
       username?: string;
       password?: string;
+      baseUrl?: string;
+      apiKey?: string;
+      webhookUrl?: string;
     };
+
+    if (body.action === "saveEvolutionServer") {
+      setGlobalEvolutionServer({
+        baseUrl: body.baseUrl || "",
+        apiKey: body.apiKey || "",
+        webhookUrl: body.webhookUrl || "",
+      });
+      return NextResponse.json({
+        ok: true,
+        evolutionServer: getGlobalEvolutionServer(),
+      });
+    }
 
     if (body.action === "createCompany") {
       const result = createCompany({
