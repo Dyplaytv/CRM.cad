@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Deal } from "@/types/crm";
 import { MONTHLY_REVENUE } from "@/data/mockData";
+import { isTaskOverdue, sortTasksByExpiration } from "@/lib/taskDates";
 
 interface SalesDashboardProps {
   deals: Deal[];
@@ -126,12 +127,14 @@ export function SalesDashboard({
             }
       );
 
-  // Todas as tarefas (Follow-ups do dia) vinculadas aos negócios
-  const allFollowUps = deals.flatMap((deal) =>
-    deal.tasks.map((task) => ({
-      ...task,
-      deal,
-    }))
+  // Todas as tarefas ordenadas da mais próxima de expirar (ou atrasada) para a mais distante
+  const allFollowUps = sortTasksByExpiration(
+    deals.flatMap((deal) =>
+      deal.tasks.map((task) => ({
+        ...task,
+        deal,
+      }))
+    )
   );
 
   const stagnantDeals = deals.filter(
@@ -404,9 +407,16 @@ export function SalesDashboard({
                         >
                           {item.deal.company}
                         </button>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 shrink-0">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] shrink-0 ${
+                            isTaskOverdue(item)
+                              ? "text-rose-500 font-semibold"
+                              : "text-zinc-500 dark:text-zinc-400"
+                          }`}
+                        >
                           {getTaskIcon(item.type)}
                           {item.dueDate}
+                          {isTaskOverdue(item) ? " (Atrasada)" : ""}
                         </span>
                       </div>
                     </div>

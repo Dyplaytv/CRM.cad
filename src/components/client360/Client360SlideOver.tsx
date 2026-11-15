@@ -25,6 +25,7 @@ import {
   Save,
   Pencil,
   Check,
+  Calendar,
 } from "lucide-react";
 import {
   ChatMessage,
@@ -36,6 +37,12 @@ import {
 } from "@/types/crm";
 import { KANBAN_STAGES } from "@/data/mockData";
 import { WhatsAppChat } from "./WhatsAppChat";
+import {
+  formatTaskDueDate,
+  getDefaultTaskDueAt,
+  isTaskOverdue,
+  sortTasksByExpiration,
+} from "@/lib/taskDates";
 
 interface Client360SlideOverProps {
   deal: Deal | null;
@@ -70,6 +77,8 @@ export function Client360SlideOver({
   const [notesHtml, setNotesHtml] = useState("");
   const [notesSavedToast, setNotesSavedToast] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDueAt, setNewTaskDueAt] = useState(getDefaultTaskDueAt);
+  const [newTaskPriority, setNewTaskPriority] = useState<Priority>("Alta");
   const [newTagInput, setNewTagInput] = useState("");
 
   const [isEditingClient, setIsEditingClient] = useState(false);
@@ -162,15 +171,18 @@ export function Client360SlideOver({
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
+    const dueAtValue = newTaskDueAt || getDefaultTaskDueAt();
     onAddTask(deal.id, {
       id: `task-${Date.now()}`,
       title: newTaskTitle.trim(),
-      dueDate: "Hoje, 17:30",
+      dueDate: formatTaskDueDate(dueAtValue),
+      dueAt: dueAtValue,
       completed: false,
-      priority: "Alta",
+      priority: newTaskPriority,
       type: "whatsapp",
     });
     setNewTaskTitle("");
+    setNewTaskDueAt(getDefaultTaskDueAt());
   };
 
   const handleCreateTag = (e: React.FormEvent) => {
@@ -719,32 +731,60 @@ export function Client360SlideOver({
                     <div className="flex-1 flex flex-col rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 overflow-y-auto">
                       <form
                         onSubmit={handleCreateTask}
-                        className="flex gap-2 mb-4"
+                        className="flex flex-col sm:flex-row flex-wrap gap-2 mb-4"
                       >
                         <input
                           type="text"
                           value={newTaskTitle}
                           onChange={(e) => setNewTaskTitle(e.target.value)}
                           placeholder="Adicionar nova tarefa ou follow-up no checklist..."
-                          className="flex-1 rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                          className="flex-1 min-w-[200px] rounded-xl px-3.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
                         />
-                        <button
-                          type="submit"
-                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Adicionar
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <label className="relative flex items-center rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus-within:border-indigo-500">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-500 mr-1.5 shrink-0" />
+                            <input
+                              type="datetime-local"
+                              value={newTaskDueAt}
+                              onChange={(e) => setNewTaskDueAt(e.target.value)}
+                              aria-label="Data e hora da tarefa"
+                              className="bg-transparent text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none dark:[color-scheme:dark]"
+                            />
+                          </label>
+                          <select
+                            value={newTaskPriority}
+                            onChange={(e) =>
+                              setNewTaskPriority(e.target.value as Priority)
+                            }
+                            aria-label="Prioridade da tarefa"
+                            className="rounded-xl px-2.5 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="Alta">Alta</option>
+                            <option value="Média">Média</option>
+                            <option value="Baixa">Baixa</option>
+                          </select>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Adicionar
+                          </button>
+                        </div>
                       </form>
 
                       <div className="space-y-2">
-                        {deal.tasks.map((task) => (
+                        {sortTasksByExpiration(deal.tasks).map((task) => {
+                          const overdue = isTaskOverdue(task);
+                          return (
                           <div
                             key={task.id}
                             onClick={() => onToggleTask(deal.id, task.id)}
                             className={`cursor-pointer p-3.5 rounded-xl border flex items-center justify-between transition-all ${
                               task.completed
                                 ? "bg-zinc-50 dark:bg-zinc-950/50 border-zinc-200/50 dark:border-zinc-800/50 opacity-60"
+                                : overdue
+                                ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-500/30 hover:border-rose-500/60"
                                 : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/40"
                             }`}
                           >
@@ -764,8 +804,15 @@ export function Client360SlideOver({
                                 >
                                   {task.title}
                                 </p>
-                                <span className="text-[10px] text-zinc-400">
+                                <span
+                                  className={`text-[10px] ${
+                                    overdue
+                                      ? "text-rose-500 font-semibold"
+                                      : "text-zinc-400"
+                                  }`}
+                                >
                                   Prazo: {task.dueDate}
+                                  {overdue ? " • Atrasada" : ""}
                                 </span>
                               </div>
                             </div>
@@ -774,7 +821,8 @@ export function Client360SlideOver({
                               {task.priority}
                             </span>
                           </div>
-                        ))}
+                          );
+                        })}
                         {deal.tasks.length === 0 && (
                           <p className="text-xs text-zinc-400 text-center py-10">
                             Nenhuma tarefa pendente para este negócio.

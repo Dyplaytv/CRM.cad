@@ -28,6 +28,7 @@ export interface DealTask {
   id: string;
   title: string;
   dueDate: string;
+  dueAt?: string;
   completed: boolean;
   priority: Priority;
   type: "call" | "email" | "whatsapp" | "meeting";
