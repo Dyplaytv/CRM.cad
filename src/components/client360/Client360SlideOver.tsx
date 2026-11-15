@@ -23,12 +23,15 @@ import {
   Sparkles,
   Clock,
   Save,
+  Pencil,
+  Check,
 } from "lucide-react";
 import {
   ChatMessage,
   Deal,
   DealTask,
   EvolutionConfig,
+  Priority,
   StageId,
 } from "@/types/crm";
 import { KANBAN_STAGES } from "@/data/mockData";
@@ -40,6 +43,7 @@ interface Client360SlideOverProps {
   onClose: () => void;
   evolutionConfig: EvolutionConfig;
   onUpdateStage: (dealId: string, stage: StageId) => void;
+  onUpdateDeal: (dealId: string, patch: Partial<Deal>) => void;
   onSaveNotes: (dealId: string, htmlNotes: string) => void;
   onToggleTask: (dealId: string, taskId: string) => void;
   onAddTask: (dealId: string, task: DealTask) => void;
@@ -53,6 +57,7 @@ export function Client360SlideOver({
   onClose,
   evolutionConfig,
   onUpdateStage,
+  onUpdateDeal,
   onSaveNotes,
   onToggleTask,
   onAddTask,
@@ -67,9 +72,44 @@ export function Client360SlideOver({
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTagInput, setNewTagInput] = useState("");
 
+  const [isEditingClient, setIsEditingClient] = useState(false);
+  const [editForm, setEditForm] = useState({
+    company: "",
+    title: "",
+    value: "0",
+    priority: "Alta" as Priority,
+    contactName: "",
+    contactRole: "",
+    contactEmail: "",
+    contactPhone: "",
+    cnpj: "",
+    city: "",
+    origin: "",
+    segment: "",
+    employees: "",
+    expectedClose: "",
+  });
+
   useEffect(() => {
     if (deal) {
       setNotesHtml(deal.notes);
+      setIsEditingClient(false);
+      setEditForm({
+        company: deal.company,
+        title: deal.title,
+        value: String(deal.value),
+        priority: deal.priority,
+        contactName: deal.contactName,
+        contactRole: deal.contactRole,
+        contactEmail: deal.contactEmail,
+        contactPhone: deal.contactPhone,
+        cnpj: deal.cnpj,
+        city: deal.city,
+        origin: deal.customFields.origin,
+        segment: deal.customFields.segment,
+        employees: deal.customFields.employees,
+        expectedClose: deal.customFields.expectedClose,
+      });
     }
   }, [deal]);
 
@@ -78,6 +118,30 @@ export function Client360SlideOver({
   }, [initialTab, deal?.id]);
 
   if (!deal) return null;
+
+  const handleSaveClientData = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateDeal(deal.id, {
+      company: editForm.company.trim() || deal.company,
+      title: editForm.title.trim() || deal.title,
+      value: Number(editForm.value) || 0,
+      priority: editForm.priority,
+      contactName: editForm.contactName.trim() || deal.contactName,
+      contactRole: editForm.contactRole.trim() || deal.contactRole,
+      contactEmail: editForm.contactEmail.trim() || deal.contactEmail,
+      contactPhone: editForm.contactPhone.trim() || deal.contactPhone,
+      cnpj: editForm.cnpj.trim() || deal.cnpj,
+      city: editForm.city.trim() || deal.city,
+      customFields: {
+        origin: editForm.origin.trim() || deal.customFields.origin,
+        segment: editForm.segment.trim() || deal.customFields.segment,
+        employees: editForm.employees.trim() || deal.customFields.employees,
+        expectedClose:
+          editForm.expectedClose.trim() || deal.customFields.expectedClose,
+      },
+    });
+    setIsEditingClient(false);
+  };
 
   const insertFormat = (tag: "b" | "i" | "h3" | "li") => {
     const snippets: Record<typeof tag, string> = {
@@ -201,51 +265,220 @@ export function Client360SlideOver({
               <div className="lg:col-span-5 p-6 border-b lg:border-b-0 lg:border-r border-zinc-200/80 dark:border-zinc-800 lg:overflow-y-auto space-y-6 bg-zinc-50/40 dark:bg-zinc-950/40">
                 {/* Contact Info Card */}
                 <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 space-y-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-indigo-500" />
-                    Dados do Decisor & Conta
-                  </h3>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
-                      <span className="text-zinc-500">Contato Principal</span>
-                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                        {deal.contactName} ({deal.contactRole})
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
-                      <span className="text-zinc-500 flex items-center gap-1">
-                        <Mail className="w-3 h-3" /> E-mail
-                      </span>
-                      <span className="font-medium text-indigo-600 dark:text-indigo-400">
-                        {deal.contactEmail}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
-                      <span className="text-zinc-500 flex items-center gap-1">
-                        <Phone className="w-3 h-3" /> WhatsApp
-                      </span>
-                      <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                        {deal.contactPhone}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
-                      <span className="text-zinc-500 flex items-center gap-1">
-                        <FileSpreadsheet className="w-3 h-3" /> CNPJ
-                      </span>
-                      <span className="font-mono text-zinc-700 dark:text-zinc-300">
-                        {deal.cnpj}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-zinc-500 flex items-center gap-1">
-                        <MapPin className="w-3 h-3" /> Localidade
-                      </span>
-                      <span className="text-zinc-700 dark:text-zinc-300">
-                        {deal.city}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-indigo-500" />
+                      Dados do Decisor &amp; Conta
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingClient(!isEditingClient)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      {isEditingClient ? "Cancelar" : "Editar Dados"}
+                    </button>
                   </div>
+
+                  {isEditingClient ? (
+                    <form onSubmit={handleSaveClientData} className="space-y-2.5 text-xs">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Empresa / Cliente</label>
+                          <input
+                            type="text"
+                            value={editForm.company}
+                            onChange={(e) => setEditForm({ ...editForm, company: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Valor (R$)</label>
+                          <input
+                            type="number"
+                            value={editForm.value}
+                            onChange={(e) => setEditForm({ ...editForm, value: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-zinc-400">Título do Negócio</label>
+                          <input
+                            type="text"
+                            value={editForm.title}
+                            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Prioridade</label>
+                          <select
+                            value={editForm.priority}
+                            onChange={(e) => setEditForm({ ...editForm, priority: e.target.value as Priority })}
+                            className="w-full rounded-lg px-2 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          >
+                            <option value="Alta">Alta</option>
+                            <option value="Média">Média</option>
+                            <option value="Baixa">Baixa</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Contato Principal</label>
+                          <input
+                            type="text"
+                            value={editForm.contactName}
+                            onChange={(e) => setEditForm({ ...editForm, contactName: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Cargo</label>
+                          <input
+                            type="text"
+                            value={editForm.contactRole}
+                            onChange={(e) => setEditForm({ ...editForm, contactRole: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400">E-mail</label>
+                          <input
+                            type="email"
+                            value={editForm.contactEmail}
+                            onChange={(e) => setEditForm({ ...editForm, contactEmail: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">WhatsApp</label>
+                          <input
+                            type="text"
+                            value={editForm.contactPhone}
+                            onChange={(e) => setEditForm({ ...editForm, contactPhone: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400">CNPJ</label>
+                          <input
+                            type="text"
+                            value={editForm.cnpj}
+                            onChange={(e) => setEditForm({ ...editForm, cnpj: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Localidade</label>
+                          <input
+                            type="text"
+                            value={editForm.city}
+                            onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Origem do Lead</label>
+                          <input
+                            type="text"
+                            value={editForm.origin}
+                            onChange={(e) => setEditForm({ ...editForm, origin: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Segmento</label>
+                          <input
+                            type="text"
+                            value={editForm.segment}
+                            onChange={(e) => setEditForm({ ...editForm, segment: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Porte (Func.)</label>
+                          <input
+                            type="text"
+                            value={editForm.employees}
+                            onChange={(e) => setEditForm({ ...editForm, employees: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400">Previsão Fechamento</label>
+                          <input
+                            type="text"
+                            value={editForm.expectedClose}
+                            onChange={(e) => setEditForm({ ...editForm, expectedClose: e.target.value })}
+                            className="w-full rounded-lg px-2.5 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full mt-2 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Salvar Alterações do Cliente
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
+                        <span className="text-zinc-500">Contato Principal</span>
+                        <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                          {deal.contactName} ({deal.contactRole})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
+                        <span className="text-zinc-500 flex items-center gap-1">
+                          <Mail className="w-3 h-3" /> E-mail
+                        </span>
+                        <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                          {deal.contactEmail}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
+                        <span className="text-zinc-500 flex items-center gap-1">
+                          <Phone className="w-3 h-3" /> WhatsApp
+                        </span>
+                        <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                          {deal.contactPhone}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1 border-b border-zinc-100 dark:border-zinc-800/70">
+                        <span className="text-zinc-500 flex items-center gap-1">
+                          <FileSpreadsheet className="w-3 h-3" /> CNPJ
+                        </span>
+                        <span className="font-mono text-zinc-700 dark:text-zinc-300">
+                          {deal.cnpj}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-1">
+                        <span className="text-zinc-500 flex items-center gap-1">
+                          <MapPin className="w-3 h-3" /> Localidade
+                        </span>
+                        <span className="text-zinc-700 dark:text-zinc-300">
+                          {deal.city}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Custom Fields */}

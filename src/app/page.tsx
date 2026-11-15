@@ -432,6 +432,12 @@ export default function CRMWorkspacePage() {
     setSlideOverTab("whatsapp");
   };
 
+  const handleUpdateDeal = (dealId: string, patch: Partial<Deal>) => {
+    setDeals((prev) =>
+      prev.map((d) => (d.id === dealId ? { ...d, ...patch } : d))
+    );
+  };
+
   const stagnantCount = deals.filter(
     (d) => d.stagnantDays > 3 && d.stage !== "closed"
   ).length;
@@ -495,6 +501,7 @@ export default function CRMWorkspacePage() {
           {activeTab === "dashboard" && (
             <SalesDashboard
               deals={deals}
+              isDemo={user.mode === "demo"}
               onSelectDeal={(deal) => handleOpenDeal360(deal, "whatsapp")}
               onToggleTask={handleToggleTask}
               onOpenPipeline={() => setActiveTab("pipeline")}
@@ -588,6 +595,7 @@ export default function CRMWorkspacePage() {
         onClose={() => setSelectedDealId(null)}
         evolutionConfig={evolutionConfig}
         onUpdateStage={handleMoveDeal}
+        onUpdateDeal={handleUpdateDeal}
         onSaveNotes={handleSaveNotes}
         onToggleTask={handleToggleTask}
         onAddTask={handleAddTask}

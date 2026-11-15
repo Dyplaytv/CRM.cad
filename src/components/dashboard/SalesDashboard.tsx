@@ -23,6 +23,7 @@ import { MONTHLY_REVENUE } from "@/data/mockData";
 
 interface SalesDashboardProps {
   deals: Deal[];
+  isDemo?: boolean;
   onSelectDeal: (deal: Deal) => void;
   onToggleTask: (dealId: string, taskId: string) => void;
   onOpenPipeline: () => void;
@@ -30,13 +31,14 @@ interface SalesDashboardProps {
 
 export function SalesDashboard({
   deals,
+  isDemo = false,
   onSelectDeal,
   onToggleTask,
   onOpenPipeline,
 }: SalesDashboardProps) {
   const [hoveredMonth, setHoveredMonth] = useState<number | null>(10); // Novembro default
 
-  // Cálculo dinâmico das métricas do topo
+  // Cálculo dinâmico real das métricas do topo a partir dos negócios ativos
   const newLeadsCount = deals.filter(
     (d) => d.stage === "leads" || d.stage === "contacted"
   ).length;
@@ -44,43 +46,44 @@ export function SalesDashboard({
   const openProposals = deals.filter(
     (d) => d.stage === "proposal" || d.stage === "negotiation"
   );
+  const openProposalsValue = openProposals.reduce((a, b) => a + b.value, 0);
 
   const closedDeals = deals.filter((d) => d.stage === "closed");
+  const closedRevenue = closedDeals.reduce((a, b) => a + b.value, 0);
+
   const conversionRate =
-    deals.length > 0 ? Math.round((closedDeals.length / deals.length) * 100) : 28;
+    deals.length > 0 ? Math.round((closedDeals.length / deals.length) * 100) : 0;
 
   const forecastRevenue = deals.reduce((acc, d) => acc + d.value, 0);
 
   const kpiCards = [
     {
       title: "Novos Leads",
-      value: `${newLeadsCount + 38}`,
-      growth: "+18.4%",
-      subtitle: "vs. mês anterior (34 qualificados)",
+      value: `${newLeadsCount}`,
+      growth: `${deals.length} total`,
+      subtitle: `${deals.length} negócio(s) ativo(s) no funil`,
       icon: Users,
       accent: "from-sky-500/15 to-indigo-500/5",
       iconColor: "text-sky-500 bg-sky-500/10 border-sky-500/20",
     },
     {
       title: "Propostas Abertas",
-      value: `${openProposals.length + 14}`,
-      growth: "+12.1%",
-      subtitle: `${openProposals
-        .reduce((a, b) => a + b.value, 0)
-        .toLocaleString("pt-BR", {
-          style: "currency",
-          currency: "BRL",
-          maximumFractionDigits: 0,
-        })} em mesa`,
+      value: `${openProposals.length}`,
+      growth: openProposals.length > 0 ? "Ativas" : "0 ativas",
+      subtitle: `${openProposalsValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        maximumFractionDigits: 0,
+      })} em mesa`,
       icon: FileText,
       accent: "from-violet-500/15 to-fuchsia-500/5",
       iconColor: "text-violet-500 bg-violet-500/10 border-violet-500/20",
     },
     {
       title: "Taxa de Conversão",
-      value: `${conversionRate + 8.4}%`,
-      growth: "+4.2%",
-      subtitle: "Ciclo médio de vendas: 19 dias",
+      value: `${conversionRate}%`,
+      growth: `${closedDeals.length} ganho(s)`,
+      subtitle: `${closedDeals.length} fechado(s) de ${deals.length} negócio(s)`,
       icon: TrendingUp,
       accent: "from-emerald-500/15 to-teal-500/5",
       iconColor: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
@@ -92,13 +95,36 @@ export function SalesDashboard({
         currency: "BRL",
         maximumFractionDigits: 0,
       }),
-      growth: "+24.8%",
-      subtitle: "Meta Q4 atingida em 92%",
+      growth: closedRevenue > 0 ? "Em carteira" : "Pipeline",
+      subtitle: `${closedRevenue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        maximumFractionDigits: 0,
+      })} já fechado(s)`,
       icon: DollarSign,
       accent: "from-amber-500/15 to-orange-500/5",
       iconColor: "text-amber-500 bg-amber-500/10 border-amber-500/20",
     },
   ];
+
+  // No modo DEMO usa os dados históricos fictícios; na conta real usa os números reais dos negócios
+  const monthlyData = isDemo
+    ? MONTHLY_REVENUE
+    : MONTHLY_REVENUE.map((m, idx) =>
+        idx === 10
+          ? {
+              month: m.month,
+              realized: closedRevenue,
+              forecast: forecastRevenue,
+              dealsCount: closedDeals.length,
+            }
+          : {
+              month: m.month,
+              realized: 0,
+              forecast: 0,
+              dealsCount: 0,
+            }
+      );
 
   // Todas as tarefas (Follow-ups do dia) vinculadas aos negócios
   const allFollowUps = deals.flatMap((deal) =>
@@ -112,7 +138,10 @@ export function SalesDashboard({
     (d) => d.stagnantDays > 3 && d.stage !== "closed"
   );
 
-  const maxRevenue = Math.max(...MONTHLY_REVENUE.map((m) => m.realized));
+  const maxRevenue = Math.max(
+    1,
+    ...monthlyData.map((m) => Math.max(m.realized, m.forecast))
+  );
 
   const getTaskIcon = (type: string) => {
     switch (type) {
@@ -218,33 +247,35 @@ export function SalesDashboard({
             <div className="mb-5 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200/70 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs">
-                  {MONTHLY_REVENUE[hoveredMonth].month}
+                  {monthlyData[hoveredMonth].month}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                     Realizado:{" "}
-                    {MONTHLY_REVENUE[hoveredMonth].realized.toLocaleString(
+                    {monthlyData[hoveredMonth].realized.toLocaleString(
                       "pt-BR",
                       { style: "currency", currency: "BRL" }
                     )}
                   </p>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    Meta:{" "}
-                    {MONTHLY_REVENUE[hoveredMonth].forecast.toLocaleString(
+                    Previsto:{" "}
+                    {monthlyData[hoveredMonth].forecast.toLocaleString(
                       "pt-BR",
                       { style: "currency", currency: "BRL" }
                     )}{" "}
-                    • {MONTHLY_REVENUE[hoveredMonth].dealsCount} contratos
-                    fechados
+                    • {monthlyData[hoveredMonth].dealsCount} contrato(s)
+                    fechado(s)
                   </p>
                 </div>
               </div>
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                {Math.round(
-                  (MONTHLY_REVENUE[hoveredMonth].realized /
-                    MONTHLY_REVENUE[hoveredMonth].forecast) *
-                    100
-                )}
+                {monthlyData[hoveredMonth].forecast > 0
+                  ? Math.round(
+                      (monthlyData[hoveredMonth].realized /
+                        monthlyData[hoveredMonth].forecast) *
+                        100
+                    )
+                  : 0}
                 % da meta atingida
               </span>
             </div>
@@ -252,7 +283,7 @@ export function SalesDashboard({
 
           {/* Bars Container */}
           <div className="h-64 flex items-end justify-between gap-2 sm:gap-3 pt-6 px-1 border-b border-zinc-200/70 dark:border-zinc-800">
-            {MONTHLY_REVENUE.map((item, index) => {
+            {monthlyData.map((item, index) => {
               const realizedPercent = Math.round(
                 (item.realized / maxRevenue) * 100
               );
