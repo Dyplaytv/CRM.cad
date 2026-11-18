@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/authSession";
 import {
+  getCompanyAutomationConfig,
   getCompanyInstanceName,
   getGlobalEvolutionServer,
   getWorkspaceDeals,
   getWorkspaceEvolutionConfig,
+  setCompanyAutomationConfig,
   setWorkspaceDeals,
   setWorkspaceEvolutionConfig,
   upsertWorkspaceDeal,
 } from "@/lib/crmStore";
-import { Deal, EvolutionConfig } from "@/types/crm";
+import {
+  CompanyAutomationConfig,
+  Deal,
+  EvolutionConfig,
+  FirstContactConfig,
+  VirtualAgentConfig,
+} from "@/types/crm";
 
 function buildTenantEvolutionConfig(
   companyId: string,
@@ -47,15 +55,24 @@ export async function GET(req: NextRequest) {
     companyId,
     getWorkspaceEvolutionConfig(companyId)
   );
+  const automation = getCompanyAutomationConfig(companyId);
 
   if (user.mode === "agent") {
     const agentDeals = allDeals.filter(
       (d) => d.seller?.id && d.seller.id === user.agentId
     );
+    const sanitizedAutomation: CompanyAutomationConfig = {
+      ...automation,
+      virtualAgent: {
+        ...automation.virtualAgent,
+        openAiApiKey: "",
+      },
+    };
     return NextResponse.json({
       ok: true,
       deals: agentDeals,
       evolutionConfig,
+      automation: sanitizedAutomation,
     });
   }
 
@@ -63,6 +80,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     deals: allDeals,
     evolutionConfig,
+    automation,
   });
 }
 
@@ -81,6 +99,10 @@ export async function PUT(req: NextRequest) {
     const body = (await req.json()) as {
       deals?: Deal[];
       evolutionConfig?: EvolutionConfig;
+      automation?: {
+        virtualAgent?: Partial<VirtualAgentConfig>;
+        firstContact?: Partial<FirstContactConfig>;
+      };
     };
 
     if (Array.isArray(body.deals)) {
@@ -95,8 +117,12 @@ export async function PUT(req: NextRequest) {
         instanceName: getCompanyInstanceName(companyId),
       });
     }
+    let updatedAutomation: CompanyAutomationConfig | undefined;
+    if (body.automation) {
+      updatedAutomation = setCompanyAutomationConfig(companyId, body.automation);
+    }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, automation: updatedAutomation });
   } catch {
     return NextResponse.json(
       { ok: false, error: "Erro ao salvar workspace." },

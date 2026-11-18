@@ -21,6 +21,7 @@ import {
   Server,
   Globe,
   Webhook,
+  Bot,
 } from "lucide-react";
 import {
   CompanyAccount,
@@ -57,6 +58,7 @@ interface MasterDashboardProps {
     input: { name: string; document?: string }
   ) => Promise<{ ok: boolean; error?: string }>;
   onToggleCompany: (companyId: string) => Promise<void>;
+  onToggleCompanyAi: (companyId: string) => Promise<void>;
   onDeleteCompany: (companyId: string) => Promise<void>;
   onCreateManager: (input: {
     companyId: string;
@@ -87,6 +89,7 @@ export function MasterDashboard({
   onCreateCompany,
   onUpdateCompany,
   onToggleCompany,
+  onToggleCompanyAi,
   onDeleteCompany,
   onCreateManager,
   onUpdateManager,
@@ -795,6 +798,24 @@ export function MasterDashboard({
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => onToggleCompanyAi(company.id)}
+                    title={
+                      company.aiAssistantEnabled
+                        ? "Bloquear Atendente Virtual (IA) para esta empresa"
+                        : "Liberar Atendente Virtual (IA) para esta empresa"
+                    }
+                    className={`px-2 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+                      company.aiAssistantEnabled
+                        ? "bg-violet-500/15 hover:bg-violet-500/25 text-violet-600 dark:text-violet-400"
+                        : "bg-zinc-500/10 hover:bg-zinc-500/20 text-zinc-500"
+                    }`}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">
+                      {company.aiAssistantEnabled ? "IA Liberada" : "IA Bloqueada"}
+                    </span>
+                  </button>
                   <button
                     onClick={() => handleQuickAddManagerForCompany(company.id)}
                     title="Criar gerente para esta empresa"

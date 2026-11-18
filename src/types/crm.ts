@@ -129,8 +129,31 @@ export interface CompanyAccount {
   name: string;
   document?: string;
   instanceName?: string;
+  aiAssistantEnabled?: boolean;
   active: boolean;
   createdAt: string;
+}
+
+export interface VirtualAgentConfig {
+  enabled: boolean;
+  name: string;
+  openAiApiKey: string;
+  model: string;
+  knowledgeBase: string;
+}
+
+export type FirstContactMode = "manager" | "specific_agent" | "round_robin";
+
+export interface FirstContactConfig {
+  mode: FirstContactMode;
+  specificAgentId?: string;
+  roundRobinIndex?: number;
+}
+
+export interface CompanyAutomationConfig {
+  aiAllowedByMaster: boolean;
+  virtualAgent: VirtualAgentConfig;
+  firstContact: FirstContactConfig;
 }
 
 export interface ManagerAccount {

@@ -1,3 +1,5 @@
+import { ChatMessage, Seller } from "@/types/crm";
+
 export interface StoredWebhookMessage {
   id: string;
   instance: string;
@@ -10,6 +12,8 @@ export interface StoredWebhookMessage {
   mediaUrl?: string;
   mediaType?: "image" | "document" | "video" | "audio";
   fileName?: string;
+  assignedSeller?: Seller;
+  aiReply?: ChatMessage;
 }
 
 const globalForWebhook = globalThis as unknown as {

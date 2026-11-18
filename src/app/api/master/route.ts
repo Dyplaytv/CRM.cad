@@ -11,6 +11,7 @@ import {
   listManagers,
   setGlobalEvolutionServer,
   toggleCompanyActive,
+  toggleCompanyAiAssistant,
   updateCompany,
   updateManager,
 } from "@/lib/crmStore";
@@ -42,9 +43,11 @@ export async function POST(req: NextRequest) {
         | "createCompany"
         | "createManager"
         | "toggleCompany"
+        | "toggleAiAssistant"
         | "saveEvolutionServer";
       name?: string;
       document?: string;
+      aiAssistantEnabled?: boolean;
       companyId?: string;
       username?: string;
       password?: string;
@@ -69,6 +72,7 @@ export async function POST(req: NextRequest) {
       const result = createCompany({
         name: body.name || "",
         document: body.document,
+        aiAssistantEnabled: body.aiAssistantEnabled,
       });
       if (!result.ok) {
         return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
@@ -99,6 +103,18 @@ export async function POST(req: NextRequest) {
 
     if (body.action === "toggleCompany") {
       const updated = toggleCompanyActive(body.companyId || "");
+      if (!updated) {
+        return NextResponse.json({ ok: false, error: "Empresa não encontrada." }, { status: 404 });
+      }
+      return NextResponse.json({
+        ok: true,
+        company: updated,
+        stats: getMasterOverviewStats(),
+      });
+    }
+
+    if (body.action === "toggleAiAssistant") {
+      const updated = toggleCompanyAiAssistant(body.companyId || "");
       if (!updated) {
         return NextResponse.json({ ok: false, error: "Empresa não encontrada." }, { status: 404 });
       }

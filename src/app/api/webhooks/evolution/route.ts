@@ -4,6 +4,7 @@ import {
   pushWebhookMessage,
 } from "@/lib/webhookStore";
 import { findEvolutionConfigByInstance } from "@/lib/crmStore";
+import { processInboundWebhookAndAi } from "@/lib/aiResponder";
 
 interface EvolutionMessageContent {
   conversation?: string;
@@ -237,6 +238,20 @@ export async function POST(req: NextRequest) {
       (incomingText.trim() || mediaUrl) &&
       phone
     ) {
+      const receivedAt = Date.now();
+      const processed = await processInboundWebhookAndAi({
+        id: messageId,
+        instance,
+        remoteJid,
+        phone,
+        pushName: body.data?.pushName || phone,
+        text: incomingText.trim() || fallbackLabel,
+        receivedAt,
+        mediaUrl,
+        mediaType,
+        fileName,
+      });
+
       pushWebhookMessage({
         id: messageId,
         instance,
@@ -245,10 +260,12 @@ export async function POST(req: NextRequest) {
         pushName: body.data?.pushName || phone,
         text: incomingText.trim() || fallbackLabel,
         fromMe,
-        receivedAt: Date.now(),
+        receivedAt,
         mediaUrl,
         mediaType,
         fileName,
+        assignedSeller: processed.assignedSeller,
+        aiReply: processed.aiReply,
       });
     }
 

@@ -14,13 +14,16 @@ import {
   AuthUser,
   ChatMessage,
   CompanyAccount,
+  CompanyAutomationConfig,
   Deal,
   DealTask,
   EvolutionConfig,
+  FirstContactConfig,
   GlobalEvolutionServer,
   ManagerAccount,
   Seller,
   StageId,
+  VirtualAgentConfig,
 } from "@/types/crm";
 import { Sidebar, NavTab } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
@@ -80,6 +83,21 @@ export default function CRMWorkspacePage() {
   const [evolutionServer, setEvolutionServer] = useState<GlobalEvolutionServer>(
     { baseUrl: "", apiKey: "", webhookUrl: "" }
   );
+  const [automation, setAutomation] = useState<CompanyAutomationConfig>({
+    aiAllowedByMaster: false,
+    virtualAgent: {
+      enabled: false,
+      name: "Assistente Virtual (IA)",
+      openAiApiKey: "",
+      model: "gpt-4o-mini",
+      knowledgeBase: "",
+    },
+    firstContact: {
+      mode: "manager",
+      specificAgentId: "",
+      roundRobinIndex: 0,
+    },
+  });
   const [masterStats, setMasterStats] = useState<MasterOverviewStats>({
     totalCompanies: 0,
     activeCompanies: 0,
@@ -170,10 +188,14 @@ export default function CRMWorkspacePage() {
         const wsData = (await wsRes.json()) as {
           deals?: Deal[];
           evolutionConfig?: EvolutionConfig | null;
+          automation?: CompanyAutomationConfig;
         };
 
         let serverDeals = Array.isArray(wsData.deals) ? wsData.deals : [];
         let serverEvo = wsData.evolutionConfig || null;
+        if (wsData.automation) {
+          setAutomation(wsData.automation);
+        }
 
         // Migra dados locais da empresa principal para o servidor se o servidor ainda estiver vazio
         if (
@@ -240,7 +262,23 @@ export default function CRMWorkspacePage() {
       .finally(() => {
         if (active) setAuthChecking(false);
       });
-    return () => {
+    const assignableAgents: AgentAccount[] =
+    automation.aiAllowedByMaster && automation.virtualAgent.enabled
+      ? [
+          {
+            id: "ai-virtual",
+            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
+            username: "ia-virtual",
+            initials: "IA",
+            color: "from-violet-500 to-fuchsia-500",
+            active: true,
+            createdAt: "",
+          },
+          ...agents,
+        ]
+      : agents;
+
+  return () => {
       active = false;
     };
   }, [hydrateWorkspaceForUser]);
@@ -299,7 +337,23 @@ export default function CRMWorkspacePage() {
       } catch {}
     };
     const interval = setInterval(syncAgentWorkspace, 4000);
-    return () => clearInterval(interval);
+    const assignableAgents: AgentAccount[] =
+    automation.aiAllowedByMaster && automation.virtualAgent.enabled
+      ? [
+          {
+            id: "ai-virtual",
+            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
+            username: "ia-virtual",
+            initials: "IA",
+            color: "from-violet-500 to-fuchsia-500",
+            active: true,
+            createdAt: "",
+          },
+          ...agents,
+        ]
+      : agents;
+
+  return () => clearInterval(interval);
   }, [user, evolutionConfig.instanceName]);
 
   // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Gerente
@@ -322,6 +376,8 @@ export default function CRMWorkspacePage() {
             mediaUrl?: string;
             mediaType?: "image" | "document" | "video" | "audio";
             fileName?: string;
+            assignedSeller?: Seller;
+            aiReply?: ChatMessage;
           }>;
           serverTime?: number;
         };
@@ -353,22 +409,31 @@ export default function CRMWorkspacePage() {
             );
             if (fresh.length === 0) return deal;
 
-            const newMsgs: ChatMessage[] = fresh.map((ev) => ({
-              id: ev.id,
-              sender: "client",
-              text: ev.text,
-              timestamp: new Date(ev.receivedAt).toLocaleTimeString("pt-BR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              mediaUrl: ev.mediaUrl,
-              mediaType: ev.mediaType,
-              fileName: ev.fileName,
-            }));
+            const newMsgs: ChatMessage[] = [];
+            fresh.forEach((ev) => {
+              newMsgs.push({
+                id: ev.id,
+                sender: "client",
+                text: ev.text,
+                timestamp: new Date(ev.receivedAt).toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                mediaUrl: ev.mediaUrl,
+                mediaType: ev.mediaType,
+                fileName: ev.fileName,
+              });
+              if (ev.aiReply && !deal.messages.some((m) => m.id === ev.aiReply!.id)) {
+                newMsgs.push(ev.aiReply);
+              }
+            });
 
+            const hasAiReplied = fresh.some((ev) => Boolean(ev.aiReply));
             return {
               ...deal,
-              unreadCount: (deal.unreadCount ?? 0) + newMsgs.length,
+              unreadCount: hasAiReplied
+                ? 0
+                : (deal.unreadCount ?? 0) + newMsgs.length,
               messages: [...deal.messages, ...newMsgs],
               timeline: [
                 ...newMsgs.map((m) => ({
@@ -411,6 +476,10 @@ export default function CRMWorkspacePage() {
               }
             } else {
               const displayName = ev.pushName || `+${ev.phone}`;
+              const initialMsgs: ChatMessage[] = [msgObj];
+              if (ev.aiReply) {
+                initialMsgs.push(ev.aiReply);
+              }
               newLeadsMap.set(suffix, {
                 id: `wa-${suffix}-${Date.now()}`,
                 title: "Atendimento WhatsApp (Inbound)",
@@ -425,7 +494,7 @@ export default function CRMWorkspacePage() {
                 stage: "leads",
                 priority: "Alta",
                 stagnantDays: 0,
-                seller: SELLERS[0],
+                seller: ev.assignedSeller || SELLERS[0],
                 tags: ["WhatsApp", "Inbound"],
                 customFields: {
                   origin: "WhatsApp Evolution API v2.3",
@@ -435,8 +504,8 @@ export default function CRMWorkspacePage() {
                 },
                 notes: `<p>Lead criado automaticamente ao receber mensagem via Evolution API v2.3.</p>`,
                 tasks: [],
-                messages: [msgObj],
-                unreadCount: 1,
+                messages: initialMsgs,
+                unreadCount: ev.aiReply ? 0 : 1,
                 timeline: [
                   {
                     id: `ev-${ev.id}`,
@@ -457,7 +526,23 @@ export default function CRMWorkspacePage() {
 
     pollWebhooks();
     const timer = setInterval(pollWebhooks, 3500);
-    return () => clearInterval(timer);
+    const assignableAgents: AgentAccount[] =
+    automation.aiAllowedByMaster && automation.virtualAgent.enabled
+      ? [
+          {
+            id: "ai-virtual",
+            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
+            username: "ia-virtual",
+            initials: "IA",
+            color: "from-violet-500 to-fuchsia-500",
+            active: true,
+            createdAt: "",
+          },
+          ...agents,
+        ]
+      : agents;
+
+  return () => clearInterval(timer);
   }, [user?.mode]);
 
   const handleLoginSuccess = (loggedUser: AuthUser) => {
@@ -545,6 +630,47 @@ export default function CRMWorkspacePage() {
       return { ok: true };
     } catch {
       return { ok: false, error: "Falha de conexão." };
+    }
+  };
+
+  const handleToggleCompanyAi = async (companyId: string) => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggleAiAssistant", companyId }),
+      });
+      if (res.ok) await loadMasterOverview();
+    } catch {}
+  };
+
+  const handleSaveAutomation = async (input: {
+    virtualAgent?: Partial<VirtualAgentConfig>;
+    firstContact?: Partial<FirstContactConfig>;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/workspace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automation: input }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        automation?: CompanyAutomationConfig;
+      };
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          error: data.error || "Erro ao salvar automação.",
+        };
+      }
+      if (data.automation) {
+        setAutomation(data.automation);
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão com o servidor." };
     }
   };
 
@@ -720,6 +846,15 @@ export default function CRMWorkspacePage() {
         initials: user?.initials || "GE",
         color: "from-indigo-600 to-violet-500",
       };
+    } else if (sellerId === "ai-virtual") {
+      nextSeller = {
+        id: "ai-virtual",
+        name: automation.virtualAgent.name || "Assistente Virtual (IA)",
+        role: "Atendente Virtual (IA)",
+        avatar: "",
+        initials: "IA",
+        color: "from-violet-500 to-fuchsia-500",
+      };
     } else {
       const agent = agents.find((a) => a.id === sellerId);
       if (!agent) return;
@@ -883,6 +1018,22 @@ export default function CRMWorkspacePage() {
     );
   }
 
+  const assignableAgents: AgentAccount[] =
+    automation.aiAllowedByMaster && automation.virtualAgent.enabled
+      ? [
+          {
+            id: "ai-virtual",
+            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
+            username: "ia-virtual",
+            initials: "IA",
+            color: "from-violet-500 to-fuchsia-500",
+            active: true,
+            createdAt: "",
+          },
+          ...agents,
+        ]
+      : agents;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f8f9fa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       {/* Left Collapsible Sidebar */}
@@ -929,6 +1080,7 @@ export default function CRMWorkspacePage() {
               onCreateCompany={handleCreateCompany}
               onUpdateCompany={handleUpdateCompany}
               onToggleCompany={handleToggleCompany}
+              onToggleCompanyAi={handleToggleCompanyAi}
               onDeleteCompany={handleDeleteCompany}
               onCreateManager={handleCreateManager}
               onUpdateManager={handleUpdateManager}
@@ -959,7 +1111,7 @@ export default function CRMWorkspacePage() {
                 setNewDealDefaultStage(stageId);
                 setNewDealModalOpen(true);
               }}
-              agents={user.mode === "manager" ? agents : []}
+              agents={user.mode === "manager" ? assignableAgents : []}
               onAssignAgent={
                 user.mode === "manager" ? handleAssignAgent : undefined
               }
@@ -979,6 +1131,8 @@ export default function CRMWorkspacePage() {
             <AgentsManager
               agents={agents}
               deals={deals}
+              automation={automation}
+              onSaveAutomation={handleSaveAutomation}
               onCreateAgent={handleCreateAgent}
               onDeleteAgent={handleDeleteAgent}
             />
@@ -1056,7 +1210,7 @@ export default function CRMWorkspacePage() {
         evolutionConfig={evolutionConfig}
         onUpdateStage={handleMoveDeal}
         onUpdateDeal={handleUpdateDeal}
-        agents={user.mode === "manager" ? agents : []}
+        agents={user.mode === "manager" ? assignableAgents : []}
         onAssignAgent={user.mode === "manager" ? handleAssignAgent : undefined}
         onSaveNotes={handleSaveNotes}
         onToggleTask={handleToggleTask}

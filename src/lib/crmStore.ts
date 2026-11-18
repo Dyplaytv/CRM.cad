@@ -4,10 +4,14 @@ import crypto from "crypto";
 import {
   AgentAccount,
   CompanyAccount,
+  CompanyAutomationConfig,
   Deal,
   EvolutionConfig,
+  FirstContactConfig,
   GlobalEvolutionServer,
   ManagerAccount,
+  Seller,
+  VirtualAgentConfig,
 } from "@/types/crm";
 
 interface StoredAgent extends AgentAccount {
@@ -22,6 +26,8 @@ interface StoredManager extends ManagerAccount {
 interface WorkspaceData {
   deals: Deal[];
   evolutionConfig: EvolutionConfig | null;
+  virtualAgent?: VirtualAgentConfig;
+  firstContact?: FirstContactConfig;
 }
 
 type WorkspacesMap = Record<string, WorkspaceData>;
@@ -152,6 +158,7 @@ export function getCompanyInstanceName(companyId = DEFAULT_COMPANY_ID): string {
 export function createCompany(input: {
   name: string;
   document?: string;
+  aiAssistantEnabled?: boolean;
 }): { ok: true; company: CompanyAccount } | { ok: false; error: string } {
   const name = input.name.trim();
   if (!name) {
@@ -166,6 +173,7 @@ export function createCompany(input: {
     name,
     document: (input.document || "").trim(),
     instanceName: buildInstanceSlug(name),
+    aiAssistantEnabled: Boolean(input.aiAssistantEnabled),
     active: true,
     createdAt: new Date().toISOString(),
   };
@@ -179,6 +187,18 @@ export function toggleCompanyActive(id: string): CompanyAccount | null {
   const next = companies.map((c) => {
     if (c.id !== id) return c;
     updatedItem = { ...c, active: !c.active };
+    return updatedItem;
+  });
+  if (updatedItem) saveCompanies(next);
+  return updatedItem;
+}
+
+export function toggleCompanyAiAssistant(id: string): CompanyAccount | null {
+  const companies = loadCompanies();
+  let updatedItem: CompanyAccount | null = null;
+  const next = companies.map((c) => {
+    if (c.id !== id) return c;
+    updatedItem = { ...c, aiAssistantEnabled: !c.aiAssistantEnabled };
     return updatedItem;
   });
   if (updatedItem) saveCompanies(next);
@@ -622,6 +642,185 @@ export function setWorkspaceEvolutionConfig(
   const all = loadWorkspaces();
   const current = all[companyId] || { deals: [], evolutionConfig: null };
   saveWorkspaces({ ...all, [companyId]: { ...current, evolutionConfig } });
+}
+
+export const VIRTUAL_AGENT_SELLER_ID = "ai-virtual";
+
+export const DEFAULT_VIRTUAL_AGENT_CONFIG: VirtualAgentConfig = {
+  enabled: false,
+  name: "Assistente Virtual (IA)",
+  openAiApiKey: "",
+  model: "gpt-4o-mini",
+  knowledgeBase: "",
+};
+
+export const DEFAULT_FIRST_CONTACT_CONFIG: FirstContactConfig = {
+  mode: "manager",
+  specificAgentId: "",
+  roundRobinIndex: 0,
+};
+
+export function findCompanyIdByInstance(instanceName: string): string {
+  const target = instanceName.trim().toLowerCase();
+  if (!target) return DEFAULT_COMPANY_ID;
+  const companies = loadCompanies();
+  for (const c of companies) {
+    if (getCompanyInstanceName(c.id).toLowerCase() === target) {
+      return c.id;
+    }
+  }
+  return DEFAULT_COMPANY_ID;
+}
+
+export function getCompanyAutomationConfig(
+  companyId = DEFAULT_COMPANY_ID
+): CompanyAutomationConfig {
+  const company = getCompanyById(companyId);
+  const ws = loadWorkspaces()[companyId];
+  return {
+    aiAllowedByMaster: Boolean(company?.aiAssistantEnabled),
+    virtualAgent: {
+      ...DEFAULT_VIRTUAL_AGENT_CONFIG,
+      ...(ws?.virtualAgent || {}),
+    },
+    firstContact: {
+      ...DEFAULT_FIRST_CONTACT_CONFIG,
+      ...(ws?.firstContact || {}),
+    },
+  };
+}
+
+export function setCompanyAutomationConfig(
+  companyId: string,
+  input: {
+    virtualAgent?: Partial<VirtualAgentConfig>;
+    firstContact?: Partial<FirstContactConfig>;
+  }
+): CompanyAutomationConfig {
+  const all = loadWorkspaces();
+  const current = all[companyId] || { deals: [], evolutionConfig: null };
+  const existingAuto = getCompanyAutomationConfig(companyId);
+
+  const nextVirtualAgent: VirtualAgentConfig = input.virtualAgent
+    ? {
+        ...existingAuto.virtualAgent,
+        ...input.virtualAgent,
+        name:
+          (input.virtualAgent.name ?? existingAuto.virtualAgent.name).trim() ||
+          DEFAULT_VIRTUAL_AGENT_CONFIG.name,
+        openAiApiKey: (
+          input.virtualAgent.openAiApiKey ??
+          existingAuto.virtualAgent.openAiApiKey
+        ).trim(),
+        model:
+          (input.virtualAgent.model ?? existingAuto.virtualAgent.model).trim() ||
+          DEFAULT_VIRTUAL_AGENT_CONFIG.model,
+      }
+    : existingAuto.virtualAgent;
+
+  const nextFirstContact: FirstContactConfig = input.firstContact
+    ? {
+        ...existingAuto.firstContact,
+        ...input.firstContact,
+      }
+    : existingAuto.firstContact;
+
+  saveWorkspaces({
+    ...all,
+    [companyId]: {
+      ...current,
+      virtualAgent: nextVirtualAgent,
+      firstContact: nextFirstContact,
+    },
+  });
+
+  return getCompanyAutomationConfig(companyId);
+}
+
+export function buildVirtualAgentSeller(name?: string): Seller {
+  return {
+    id: VIRTUAL_AGENT_SELLER_ID,
+    name: (name || DEFAULT_VIRTUAL_AGENT_CONFIG.name).trim(),
+    role: "Atendente Virtual (IA)",
+    avatar: "",
+    initials: "IA",
+    color: "from-violet-500 to-fuchsia-500",
+  };
+}
+
+export function resolveFirstContactSeller(companyId = DEFAULT_COMPANY_ID): Seller {
+  const auto = getCompanyAutomationConfig(companyId);
+  const companyManagers = listManagers().filter(
+    (m) => m.companyId === companyId && m.active
+  );
+  const defaultManager: Seller = companyManagers[0]
+    ? {
+        id: companyManagers[0].id,
+        name: companyManagers[0].name,
+        role: "Gerente",
+        avatar: "",
+        initials: companyManagers[0].initials,
+        color: companyManagers[0].color,
+      }
+    : {
+        id: "manager-default",
+        name: "Gerente",
+        role: "Gerente",
+        avatar: "",
+        initials: "GE",
+        color: "from-indigo-500 to-violet-500",
+      };
+
+  const activeAgents = listAgents(companyId).filter((a) => a.active);
+  const mode = auto.firstContact.mode;
+
+  if (mode === "specific_agent") {
+    const targetId = auto.firstContact.specificAgentId;
+    if (
+      targetId === VIRTUAL_AGENT_SELLER_ID &&
+      auto.aiAllowedByMaster &&
+      auto.virtualAgent.enabled
+    ) {
+      return buildVirtualAgentSeller(auto.virtualAgent.name);
+    }
+    const found = activeAgents.find((a) => a.id === targetId);
+    if (found) {
+      return {
+        id: found.id,
+        name: found.name,
+        role: "Atendente",
+        avatar: "",
+        initials: found.initials,
+        color: found.color,
+      };
+    }
+    return defaultManager;
+  }
+
+  if (mode === "round_robin") {
+    if (activeAgents.length === 0) {
+      return defaultManager;
+    }
+    const currentIndex = auto.firstContact.roundRobinIndex || 0;
+    const chosen = activeAgents[currentIndex % activeAgents.length];
+    const nextIndex = (currentIndex + 1) % activeAgents.length;
+    setCompanyAutomationConfig(companyId, {
+      firstContact: {
+        ...auto.firstContact,
+        roundRobinIndex: nextIndex,
+      },
+    });
+    return {
+      id: chosen.id,
+      name: chosen.name,
+      role: "Atendente",
+      avatar: "",
+      initials: chosen.initials,
+      color: chosen.color,
+    };
+  }
+
+  return defaultManager;
 }
 
 export function getGlobalEvolutionServer(): GlobalEvolutionServer {
