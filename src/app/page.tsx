@@ -98,6 +98,9 @@ export default function CRMWorkspacePage() {
       roundRobinIndex: 0,
     },
   });
+  const [revenueTargets, setRevenueTargets] = useState<number[]>(() =>
+    Array.from({ length: 12 }, () => 0)
+  );
   const [masterStats, setMasterStats] = useState<MasterOverviewStats>({
     totalCompanies: 0,
     activeCompanies: 0,
@@ -189,12 +192,16 @@ export default function CRMWorkspacePage() {
           deals?: Deal[];
           evolutionConfig?: EvolutionConfig | null;
           automation?: CompanyAutomationConfig;
+          revenueTargets?: number[];
         };
 
         let serverDeals = Array.isArray(wsData.deals) ? wsData.deals : [];
         let serverEvo = wsData.evolutionConfig || null;
         if (wsData.automation) {
           setAutomation(wsData.automation);
+        }
+        if (Array.isArray(wsData.revenueTargets)) {
+          setRevenueTargets(wsData.revenueTargets);
         }
 
         // Migra dados locais da empresa principal para o servidor se o servidor ainda estiver vazio
@@ -674,6 +681,30 @@ export default function CRMWorkspacePage() {
     }
   };
 
+  const handleSaveRevenueTargets = async (
+    targets: number[]
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/workspace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revenueTargets: targets }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        revenueTargets?: number[];
+      };
+      if (!res.ok || !data.ok) {
+        return { ok: false, error: data.error || "Erro ao salvar metas." };
+      }
+      setRevenueTargets(data.revenueTargets || targets);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão com o servidor." };
+    }
+  };
+
   const handleToggleCompany = async (companyId: string) => {
     try {
       const res = await fetch("/api/master", {
@@ -1094,6 +1125,9 @@ export default function CRMWorkspacePage() {
             <SalesDashboard
               deals={deals}
               isDemo={user.mode === "demo"}
+              revenueTargets={revenueTargets}
+              canEditTargets={user.mode === "manager"}
+              onSaveRevenueTargets={handleSaveRevenueTargets}
               onSelectDeal={(deal) => handleOpenDeal360(deal, "whatsapp")}
               onToggleTask={handleToggleTask}
               onOpenPipeline={() => setActiveTab("pipeline")}

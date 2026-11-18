@@ -156,6 +156,10 @@ export interface CompanyAutomationConfig {
   firstContact: FirstContactConfig;
 }
 
+export interface RevenueTargets {
+  monthlyForecasts: number[];
+}
+
 export interface ManagerAccount {
   id: string;
   companyId: string;

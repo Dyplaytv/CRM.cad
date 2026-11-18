@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Users,
@@ -17,6 +17,9 @@ import {
   AlertTriangle,
   Sparkles,
   ChevronRight,
+  Target,
+  X,
+  Check,
 } from "lucide-react";
 import { Deal } from "@/types/crm";
 import { MONTHLY_REVENUE } from "@/data/mockData";
@@ -26,6 +29,11 @@ import { getDealUnreadCount } from "@/lib/unreadWhatsApp";
 interface SalesDashboardProps {
   deals: Deal[];
   isDemo?: boolean;
+  revenueTargets?: number[];
+  canEditTargets?: boolean;
+  onSaveRevenueTargets?: (
+    targets: number[]
+  ) => Promise<{ ok: boolean; error?: string }>;
   onSelectDeal: (deal: Deal) => void;
   onToggleTask: (dealId: string, taskId: string) => void;
   onOpenPipeline: () => void;
@@ -34,12 +42,30 @@ interface SalesDashboardProps {
 export function SalesDashboard({
   deals,
   isDemo = false,
+  revenueTargets,
+  canEditTargets = false,
+  onSaveRevenueTargets,
   onSelectDeal,
   onToggleTask,
   onOpenPipeline,
 }: SalesDashboardProps) {
-  const [hoveredMonth, setHoveredMonth] = useState<number | null>(10); // Novembro default
+  const currentMonthIdx = new Date().getMonth();
+  const [hoveredMonth, setHoveredMonth] = useState<number | null>(
+    currentMonthIdx
+  );
   const [showUnreadList, setShowUnreadList] = useState(false);
+  const [targetsModalOpen, setTargetsModalOpen] = useState(false);
+  const [draftTargets, setDraftTargets] = useState<number[]>(() =>
+    Array.from({ length: 12 }, (_, idx) => revenueTargets?.[idx] || 0)
+  );
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [savingTargets, setSavingTargets] = useState(false);
+
+  useEffect(() => {
+    setDraftTargets(
+      Array.from({ length: 12 }, (_, idx) => revenueTargets?.[idx] || 0)
+    );
+  }, [revenueTargets]);
 
   // Cálculo dinâmico real das métricas do topo a partir dos negócios ativos
   const newLeadsCount = deals.filter(
@@ -58,7 +84,10 @@ export function SalesDashboard({
   const conversionRate =
     deals.length > 0 ? Math.round((closedDeals.length / deals.length) * 100) : 0;
 
-  const forecastRevenue = deals.reduce((acc, d) => acc + d.value, 0);
+  const pipelineForecast = deals.reduce((acc, d) => acc + d.value, 0);
+  const currentMonthTarget = revenueTargets?.[currentMonthIdx] || 0;
+  const forecastRevenue =
+    currentMonthTarget > 0 ? currentMonthTarget : pipelineForecast;
 
   const kpiCards: Array<{
     key: string;
@@ -71,6 +100,7 @@ export function SalesDashboard({
     iconColor: string;
     clickable?: boolean;
     hasAlert?: boolean;
+    onClick?: () => void;
   }> = [
     {
       key: "new-leads",
@@ -135,36 +165,50 @@ export function SalesDashboard({
         currency: "BRL",
         maximumFractionDigits: 0,
       }),
-      growth: closedRevenue > 0 ? "Em carteira" : "Pipeline",
-      subtitle: `${closedRevenue.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-        maximumFractionDigits: 0,
-      })} já fechado(s)`,
+      growth:
+        currentMonthTarget > 0
+          ? "Meta do mês"
+          : canEditTargets
+          ? "Definir meta"
+          : "Pipeline",
+      subtitle:
+        currentMonthTarget > 0
+          ? `${closedRevenue.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+              maximumFractionDigits: 0,
+            })} fechado • ${pipelineForecast.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+              maximumFractionDigits: 0,
+            })} em pipeline`
+          : `${closedRevenue.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+              maximumFractionDigits: 0,
+            })} já fechado(s)`,
       icon: DollarSign,
       accent: "from-amber-500/15 to-orange-500/5",
       iconColor: "text-amber-500 bg-amber-500/10 border-amber-500/20",
+      clickable: canEditTargets,
+      onClick: canEditTargets ? () => setTargetsModalOpen(true) : undefined,
     },
   ];
 
-  // No modo DEMO usa os dados históricos fictícios; na conta real usa os números reais dos negócios
+  // No modo DEMO usa os dados históricos fictícios; na conta real usa metas cadastradas + fechamentos reais
   const monthlyData = isDemo
     ? MONTHLY_REVENUE
-    : MONTHLY_REVENUE.map((m, idx) =>
-        idx === 10
-          ? {
-              month: m.month,
-              realized: closedRevenue,
-              forecast: forecastRevenue,
-              dealsCount: closedDeals.length,
-            }
-          : {
-              month: m.month,
-              realized: 0,
-              forecast: 0,
-              dealsCount: 0,
-            }
-      );
+    : MONTHLY_REVENUE.map((m, idx) => {
+        const targetVal = revenueTargets?.[idx] || 0;
+        const fallbackForecast =
+          idx === currentMonthIdx ? pipelineForecast : 0;
+        return {
+          month: m.month,
+          realized: idx === currentMonthIdx ? closedRevenue : 0,
+          forecast: targetVal > 0 ? targetVal : fallbackForecast,
+          dealsCount: idx === currentMonthIdx ? closedDeals.length : 0,
+        };
+      });
 
   // Todas as tarefas ordenadas da mais próxima de expirar (ou atrasada) para a mais distante
   const allFollowUps = sortTasksByExpiration(
@@ -211,7 +255,9 @@ export function SalesDashboard({
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.06 }}
               onClick={
-                card.clickable
+                card.onClick
+                  ? card.onClick
+                  : card.clickable
                   ? () => setShowUnreadList((prev) => !prev)
                   : undefined
               }
@@ -351,7 +397,7 @@ export function SalesDashboard({
               </p>
             </div>
 
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-t from-indigo-600 to-violet-500" />
                 <span className="text-zinc-600 dark:text-zinc-300 font-medium">
@@ -364,6 +410,16 @@ export function SalesDashboard({
                   Meta Prevista
                 </span>
               </div>
+              {canEditTargets && (
+                <button
+                  type="button"
+                  onClick={() => setTargetsModalOpen(true)}
+                  className="ml-1 px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  Definir Metas
+                </button>
+              )}
             </div>
           </div>
 
@@ -579,6 +635,150 @@ export function SalesDashboard({
           )}
         </motion.div>
       </div>
+
+      {/* Modal: Cadastrar Receita Prevista / Metas Mensais */}
+      {targetsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500">
+                  <Target className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                    Metas & Receita Prevista (2026)
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Defina a meta de faturamento prevista para cada mês da empresa.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTargetsModalOpen(false)}
+                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Aplicar mesma meta para todos os meses */}
+            <div className="flex flex-wrap items-end gap-3 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/80 dark:border-zinc-800">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                  Aplicar meta mensal padrão (R$) para todos os meses
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="100"
+                  value={bulkTarget}
+                  onChange={(e) => setBulkTarget(e.target.value)}
+                  placeholder="Ex: 50000"
+                  className="w-full rounded-xl px-3.5 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const val = Number(bulkTarget);
+                  if (Number.isFinite(val) && val >= 0) {
+                    setDraftTargets(Array.from({ length: 12 }, () => val));
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold transition-colors"
+              >
+                Aplicar em Todos
+              </button>
+            </div>
+
+            {/* Grid dos 12 meses */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[45vh] overflow-y-auto pr-1">
+              {MONTHLY_REVENUE.map((m, idx) => {
+                const isCurrent = idx === currentMonthIdx;
+                return (
+                  <div
+                    key={m.month}
+                    className={`p-3 rounded-xl border ${
+                      isCurrent
+                        ? "border-indigo-500/50 bg-indigo-500/5"
+                        : "border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/50"
+                    }`}
+                  >
+                    <label className="flex items-center justify-between text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                      <span>{m.month}</span>
+                      {isCurrent && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500 text-white">
+                          Atual
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="100"
+                      value={draftTargets[idx] || 0}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        setDraftTargets((prev) =>
+                          prev.map((item, i) => (i === idx ? val : item))
+                        );
+                      }}
+                      className="w-full rounded-lg px-2.5 py-1.5 text-xs font-mono bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Meta anual prevista:{" "}
+                <strong className="text-zinc-900 dark:text-zinc-100">
+                  {draftTargets
+                    .reduce((acc, v) => acc + (v || 0), 0)
+                    .toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                      maximumFractionDigits: 0,
+                    })}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTargetsModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={savingTargets}
+                  onClick={async () => {
+                    if (!onSaveRevenueTargets) return;
+                    setSavingTargets(true);
+                    const res = await onSaveRevenueTargets(draftTargets);
+                    setSavingTargets(false);
+                    if (res.ok) {
+                      setTargetsModalOpen(false);
+                    }
+                  }}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Check className="w-4 h-4" />
+                  {savingTargets ? "Salvando..." : "Salvar Metas"}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

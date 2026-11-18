@@ -10,6 +10,7 @@ import {
   FirstContactConfig,
   GlobalEvolutionServer,
   ManagerAccount,
+  RevenueTargets,
   Seller,
   VirtualAgentConfig,
 } from "@/types/crm";
@@ -28,6 +29,7 @@ interface WorkspaceData {
   evolutionConfig: EvolutionConfig | null;
   virtualAgent?: VirtualAgentConfig;
   firstContact?: FirstContactConfig;
+  revenueTargets?: RevenueTargets;
 }
 
 type WorkspacesMap = Record<string, WorkspaceData>;
@@ -642,6 +644,36 @@ export function setWorkspaceEvolutionConfig(
   const all = loadWorkspaces();
   const current = all[companyId] || { deals: [], evolutionConfig: null };
   saveWorkspaces({ ...all, [companyId]: { ...current, evolutionConfig } });
+}
+
+export function getWorkspaceRevenueTargets(
+  companyId = DEFAULT_COMPANY_ID
+): number[] {
+  const raw = loadWorkspaces()[companyId]?.revenueTargets?.monthlyForecasts;
+  if (Array.isArray(raw) && raw.length === 12) {
+    return raw.map((v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0));
+  }
+  return Array.from({ length: 12 }, () => 0);
+}
+
+export function setWorkspaceRevenueTargets(
+  companyId: string,
+  monthlyForecasts: number[]
+): number[] {
+  const normalized = Array.from({ length: 12 }, (_, idx) => {
+    const val = Number(monthlyForecasts[idx] ?? 0);
+    return Number.isFinite(val) && val >= 0 ? val : 0;
+  });
+  const all = loadWorkspaces();
+  const current = all[companyId] || { deals: [], evolutionConfig: null };
+  saveWorkspaces({
+    ...all,
+    [companyId]: {
+      ...current,
+      revenueTargets: { monthlyForecasts: normalized },
+    },
+  });
+  return normalized;
 }
 
 export const VIRTUAL_AGENT_SELLER_ID = "ai-virtual";

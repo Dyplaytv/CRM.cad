@@ -6,9 +6,11 @@ import {
   getGlobalEvolutionServer,
   getWorkspaceDeals,
   getWorkspaceEvolutionConfig,
+  getWorkspaceRevenueTargets,
   setCompanyAutomationConfig,
   setWorkspaceDeals,
   setWorkspaceEvolutionConfig,
+  setWorkspaceRevenueTargets,
   upsertWorkspaceDeal,
 } from "@/lib/crmStore";
 import {
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
     getWorkspaceEvolutionConfig(companyId)
   );
   const automation = getCompanyAutomationConfig(companyId);
+  const revenueTargets = getWorkspaceRevenueTargets(companyId);
 
   if (user.mode === "agent") {
     const agentDeals = allDeals.filter(
@@ -73,6 +76,7 @@ export async function GET(req: NextRequest) {
       deals: agentDeals,
       evolutionConfig,
       automation: sanitizedAutomation,
+      revenueTargets,
     });
   }
 
@@ -81,6 +85,7 @@ export async function GET(req: NextRequest) {
     deals: allDeals,
     evolutionConfig,
     automation,
+    revenueTargets,
   });
 }
 
@@ -103,6 +108,7 @@ export async function PUT(req: NextRequest) {
         virtualAgent?: Partial<VirtualAgentConfig>;
         firstContact?: Partial<FirstContactConfig>;
       };
+      revenueTargets?: number[];
     };
 
     if (Array.isArray(body.deals)) {
@@ -121,8 +127,16 @@ export async function PUT(req: NextRequest) {
     if (body.automation) {
       updatedAutomation = setCompanyAutomationConfig(companyId, body.automation);
     }
+    let updatedTargets: number[] | undefined;
+    if (Array.isArray(body.revenueTargets)) {
+      updatedTargets = setWorkspaceRevenueTargets(companyId, body.revenueTargets);
+    }
 
-    return NextResponse.json({ ok: true, automation: updatedAutomation });
+    return NextResponse.json({
+      ok: true,
+      automation: updatedAutomation,
+      revenueTargets: updatedTargets,
+    });
   } catch {
     return NextResponse.json(
       { ok: false, error: "Erro ao salvar workspace." },
