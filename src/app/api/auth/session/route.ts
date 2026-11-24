@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
     let authenticatedUser: AuthUser | null = null;
 
     if (body.mode === "demo") {
-      authenticatedUser = DEMO_USER;
+      return NextResponse.json(
+        { ok: false, error: "Modo demonstração desativado." },
+        { status: 403 }
+      );
     } else {
       const normalizedUser = (body.username || "").trim().toLowerCase();
       const password = body.password || "";
