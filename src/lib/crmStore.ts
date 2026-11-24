@@ -13,6 +13,7 @@ import {
   RevenueTargets,
   Seller,
   VirtualAgentConfig,
+  VirtualAgentProfile,
 } from "@/types/crm";
 
 interface StoredAgent extends AgentAccount {
@@ -28,6 +29,7 @@ interface WorkspaceData {
   deals: Deal[];
   evolutionConfig: EvolutionConfig | null;
   virtualAgent?: VirtualAgentConfig;
+  virtualAgents?: VirtualAgentProfile[];
   firstContact?: FirstContactConfig;
   revenueTargets?: RevenueTargets;
 }
@@ -709,12 +711,41 @@ export function getCompanyAutomationConfig(
 ): CompanyAutomationConfig {
   const company = getCompanyById(companyId);
   const ws = loadWorkspaces()[companyId];
+  const virtualAgent: VirtualAgentConfig = {
+    ...DEFAULT_VIRTUAL_AGENT_CONFIG,
+    ...(ws?.virtualAgent || {}),
+  };
+
+  let virtualAgents: VirtualAgentProfile[] = [];
+  if (Array.isArray(ws?.virtualAgents)) {
+    virtualAgents = ws.virtualAgents;
+  } else if (
+    ws?.virtualAgent &&
+    (ws.virtualAgent.enabled ||
+      ws.virtualAgent.knowledgeBase?.trim() ||
+      (ws.virtualAgent.name &&
+        ws.virtualAgent.name !== DEFAULT_VIRTUAL_AGENT_CONFIG.name))
+  ) {
+    virtualAgents = [
+      {
+        id: VIRTUAL_AGENT_SELLER_ID,
+        name: virtualAgent.name || DEFAULT_VIRTUAL_AGENT_CONFIG.name,
+        specialty: "Atendimento Geral",
+        personality: "",
+        knowledgeBase: virtualAgent.knowledgeBase || "",
+        model: virtualAgent.model || DEFAULT_VIRTUAL_AGENT_CONFIG.model,
+        active: Boolean(virtualAgent.enabled),
+        initials: computeInitials(virtualAgent.name || "IA"),
+        color: "from-violet-500 to-fuchsia-500",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  }
+
   return {
     aiAllowedByMaster: Boolean(company?.aiAssistantEnabled),
-    virtualAgent: {
-      ...DEFAULT_VIRTUAL_AGENT_CONFIG,
-      ...(ws?.virtualAgent || {}),
-    },
+    virtualAgent,
+    virtualAgents,
     firstContact: {
       ...DEFAULT_FIRST_CONTACT_CONFIG,
       ...(ws?.firstContact || {}),
@@ -726,6 +757,7 @@ export function setCompanyAutomationConfig(
   companyId: string,
   input: {
     virtualAgent?: Partial<VirtualAgentConfig>;
+    virtualAgents?: VirtualAgentProfile[];
     firstContact?: Partial<FirstContactConfig>;
   }
 ): CompanyAutomationConfig {
@@ -750,6 +782,31 @@ export function setCompanyAutomationConfig(
       }
     : existingAuto.virtualAgent;
 
+  const nextVirtualAgents: VirtualAgentProfile[] = Array.isArray(
+    input.virtualAgents
+  )
+    ? input.virtualAgents.map((item, idx) => {
+        const cleanName = item.name?.trim() || `Assistente IA ${idx + 1}`;
+        return {
+          id:
+            item.id?.trim() ||
+            `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: cleanName,
+          specialty: (item.specialty || "").trim(),
+          personality: (item.personality || "").trim(),
+          knowledgeBase: (item.knowledgeBase || "").trim(),
+          model:
+            (item.model || "").trim() ||
+            nextVirtualAgent.model ||
+            DEFAULT_VIRTUAL_AGENT_CONFIG.model,
+          active: item.active !== false,
+          initials: computeInitials(cleanName),
+          color: item.color || "from-violet-500 to-fuchsia-500",
+          createdAt: item.createdAt || new Date().toISOString(),
+        };
+      })
+    : existingAuto.virtualAgents;
+
   const nextFirstContact: FirstContactConfig = input.firstContact
     ? {
         ...existingAuto.firstContact,
@@ -762,6 +819,7 @@ export function setCompanyAutomationConfig(
     [companyId]: {
       ...current,
       virtualAgent: nextVirtualAgent,
+      virtualAgents: nextVirtualAgents,
       firstContact: nextFirstContact,
     },
   });
@@ -769,14 +827,46 @@ export function setCompanyAutomationConfig(
   return getCompanyAutomationConfig(companyId);
 }
 
-export function buildVirtualAgentSeller(name?: string): Seller {
+export function findVirtualAgentForDeal(
+  companyId: string,
+  sellerId?: string
+): VirtualAgentProfile | null {
+  if (!sellerId) return null;
+  const auto = getCompanyAutomationConfig(companyId);
+  const found = auto.virtualAgents.find((a) => a.id === sellerId && a.active);
+  if (found) return found;
+  if (sellerId === VIRTUAL_AGENT_SELLER_ID && auto.virtualAgent.enabled) {
+    return {
+      id: VIRTUAL_AGENT_SELLER_ID,
+      name: auto.virtualAgent.name,
+      specialty: "Atendimento Geral",
+      personality: "",
+      knowledgeBase: auto.virtualAgent.knowledgeBase,
+      model: auto.virtualAgent.model,
+      active: true,
+      initials: computeInitials(auto.virtualAgent.name),
+      color: "from-violet-500 to-fuchsia-500",
+      createdAt: "",
+    };
+  }
+  return null;
+}
+
+export function buildVirtualAgentSeller(
+  name?: string,
+  id = VIRTUAL_AGENT_SELLER_ID,
+  specialty?: string,
+  initials?: string,
+  color = "from-violet-500 to-fuchsia-500"
+): Seller {
+  const cleanName = (name || DEFAULT_VIRTUAL_AGENT_CONFIG.name).trim();
   return {
-    id: VIRTUAL_AGENT_SELLER_ID,
-    name: (name || DEFAULT_VIRTUAL_AGENT_CONFIG.name).trim(),
-    role: "Atendente Virtual (IA)",
+    id,
+    name: cleanName,
+    role: specialty ? `IA • ${specialty}` : "Atendente Virtual (IA)",
     avatar: "",
-    initials: "IA",
-    color: "from-violet-500 to-fuchsia-500",
+    initials: initials || computeInitials(cleanName),
+    color,
   };
 }
 
@@ -808,12 +898,17 @@ export function resolveFirstContactSeller(companyId = DEFAULT_COMPANY_ID): Selle
 
   if (mode === "specific_agent") {
     const targetId = auto.firstContact.specificAgentId;
-    if (
-      targetId === VIRTUAL_AGENT_SELLER_ID &&
-      auto.aiAllowedByMaster &&
-      auto.virtualAgent.enabled
-    ) {
-      return buildVirtualAgentSeller(auto.virtualAgent.name);
+    if (targetId && auto.aiAllowedByMaster) {
+      const matchedAi = findVirtualAgentForDeal(companyId, targetId);
+      if (matchedAi) {
+        return buildVirtualAgentSeller(
+          matchedAi.name,
+          matchedAi.id,
+          matchedAi.specialty,
+          matchedAi.initials,
+          matchedAi.color
+        );
+      }
     }
     const found = activeAgents.find((a) => a.id === targetId);
     if (found) {

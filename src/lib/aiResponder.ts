@@ -2,11 +2,11 @@ import { ChatMessage, Deal, Seller } from "@/types/crm";
 import {
   findCompanyIdByInstance,
   findEvolutionConfigByInstance,
+  findVirtualAgentForDeal,
   getCompanyAutomationConfig,
   getWorkspaceDeals,
   resolveFirstContactSeller,
   upsertWorkspaceDeal,
-  VIRTUAL_AGENT_SELLER_ID,
 } from "@/lib/crmStore";
 
 interface InboundWebhookParams {
@@ -26,12 +26,20 @@ async function generateOpenAiReply(params: {
   apiKey: string;
   model: string;
   agentName: string;
+  specialty?: string;
+  personality?: string;
   knowledgeBase: string;
   contactName: string;
   messages: ChatMessage[];
 }): Promise<string | null> {
   const systemPrompt = [
     `Você é ${params.agentName}, atendente virtual oficial da empresa no WhatsApp.`,
+    params.specialty?.trim()
+      ? `Sua especialidade/função: ${params.specialty.trim()}.`
+      : "",
+    params.personality?.trim()
+      ? `Personalidade e tom de voz: ${params.personality.trim()}.`
+      : "",
     `Responda sempre em português do Brasil, de forma cordial, clara, objetiva e natural.`,
     `Nunca invente informações que não estejam na base de conhecimento; se não souber algo específico, informe que um especialista humano dará sequência.`,
     params.knowledgeBase.trim()
@@ -197,18 +205,20 @@ export async function processInboundWebhookAndAi(
 
   let aiReply: ChatMessage | undefined;
   const automation = getCompanyAutomationConfig(companyId);
+  const matchedAi = findVirtualAgentForDeal(companyId, targetDeal.seller?.id);
 
   if (
-    targetDeal.seller?.id === VIRTUAL_AGENT_SELLER_ID &&
+    matchedAi &&
     automation.aiAllowedByMaster &&
-    automation.virtualAgent.enabled &&
     automation.virtualAgent.openAiApiKey
   ) {
     const replyText = await generateOpenAiReply({
       apiKey: automation.virtualAgent.openAiApiKey,
-      model: automation.virtualAgent.model,
-      agentName: automation.virtualAgent.name,
-      knowledgeBase: automation.virtualAgent.knowledgeBase,
+      model: matchedAi.model || automation.virtualAgent.model,
+      agentName: matchedAi.name,
+      specialty: matchedAi.specialty,
+      personality: matchedAi.personality,
+      knowledgeBase: matchedAi.knowledgeBase,
       contactName: targetDeal.contactName,
       messages: targetDeal.messages,
     });
@@ -240,7 +250,7 @@ export async function processInboundWebhookAndAi(
         timeline: [
           {
             id: `ev-${aiReply.id}`,
-            title: `Resposta automática (${automation.virtualAgent.name})`,
+            title: `Resposta automática (${matchedAi.name})`,
             description: replyText.slice(0, 70),
             timestamp: replyTime,
             type: "whatsapp",

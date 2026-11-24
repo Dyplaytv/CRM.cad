@@ -142,6 +142,19 @@ export interface VirtualAgentConfig {
   knowledgeBase: string;
 }
 
+export interface VirtualAgentProfile {
+  id: string;
+  name: string;
+  specialty: string;
+  personality: string;
+  knowledgeBase: string;
+  model: string;
+  active: boolean;
+  initials: string;
+  color: string;
+  createdAt: string;
+}
+
 export type FirstContactMode = "manager" | "specific_agent" | "round_robin";
 
 export interface FirstContactConfig {
@@ -153,6 +166,7 @@ export interface FirstContactConfig {
 export interface CompanyAutomationConfig {
   aiAllowedByMaster: boolean;
   virtualAgent: VirtualAgentConfig;
+  virtualAgents: VirtualAgentProfile[];
   firstContact: FirstContactConfig;
 }
 

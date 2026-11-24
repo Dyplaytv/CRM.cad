@@ -24,6 +24,7 @@ import {
   Seller,
   StageId,
   VirtualAgentConfig,
+  VirtualAgentProfile,
 } from "@/types/crm";
 import { Sidebar, NavTab } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
@@ -92,6 +93,7 @@ export default function CRMWorkspacePage() {
       model: "gpt-4o-mini",
       knowledgeBase: "",
     },
+    virtualAgents: [],
     firstContact: {
       mode: "manager",
       specificAgentId: "",
@@ -269,23 +271,7 @@ export default function CRMWorkspacePage() {
       .finally(() => {
         if (active) setAuthChecking(false);
       });
-    const assignableAgents: AgentAccount[] =
-    automation.aiAllowedByMaster && automation.virtualAgent.enabled
-      ? [
-          {
-            id: "ai-virtual",
-            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
-            username: "ia-virtual",
-            initials: "IA",
-            color: "from-violet-500 to-fuchsia-500",
-            active: true,
-            createdAt: "",
-          },
-          ...agents,
-        ]
-      : agents;
-
-  return () => {
+    return () => {
       active = false;
     };
   }, [hydrateWorkspaceForUser]);
@@ -344,23 +330,7 @@ export default function CRMWorkspacePage() {
       } catch {}
     };
     const interval = setInterval(syncAgentWorkspace, 4000);
-    const assignableAgents: AgentAccount[] =
-    automation.aiAllowedByMaster && automation.virtualAgent.enabled
-      ? [
-          {
-            id: "ai-virtual",
-            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
-            username: "ia-virtual",
-            initials: "IA",
-            color: "from-violet-500 to-fuchsia-500",
-            active: true,
-            createdAt: "",
-          },
-          ...agents,
-        ]
-      : agents;
-
-  return () => clearInterval(interval);
+    return () => clearInterval(interval);
   }, [user, evolutionConfig.instanceName]);
 
   // Escuta mensagens reais recebidas via Webhook da Evolution API v2.3 no modo Gerente
@@ -533,23 +503,7 @@ export default function CRMWorkspacePage() {
 
     pollWebhooks();
     const timer = setInterval(pollWebhooks, 3500);
-    const assignableAgents: AgentAccount[] =
-    automation.aiAllowedByMaster && automation.virtualAgent.enabled
-      ? [
-          {
-            id: "ai-virtual",
-            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
-            username: "ia-virtual",
-            initials: "IA",
-            color: "from-violet-500 to-fuchsia-500",
-            active: true,
-            createdAt: "",
-          },
-          ...agents,
-        ]
-      : agents;
-
-  return () => clearInterval(timer);
+    return () => clearInterval(timer);
   }, [user?.mode]);
 
   const handleLoginSuccess = (loggedUser: AuthUser) => {
@@ -653,6 +607,7 @@ export default function CRMWorkspacePage() {
 
   const handleSaveAutomation = async (input: {
     virtualAgent?: Partial<VirtualAgentConfig>;
+    virtualAgents?: VirtualAgentProfile[];
     firstContact?: Partial<FirstContactConfig>;
   }): Promise<{ ok: boolean; error?: string }> => {
     try {
@@ -877,26 +832,42 @@ export default function CRMWorkspacePage() {
         initials: user?.initials || "GE",
         color: "from-indigo-600 to-violet-500",
       };
-    } else if (sellerId === "ai-virtual") {
-      nextSeller = {
-        id: "ai-virtual",
-        name: automation.virtualAgent.name || "Assistente Virtual (IA)",
-        role: "Atendente Virtual (IA)",
-        avatar: "",
-        initials: "IA",
-        color: "from-violet-500 to-fuchsia-500",
-      };
     } else {
-      const agent = agents.find((a) => a.id === sellerId);
-      if (!agent) return;
-      nextSeller = {
-        id: agent.id,
-        name: agent.name,
-        role: "Atendente",
-        avatar: "",
-        initials: agent.initials,
-        color: agent.color,
-      };
+      const aiMatch = (automation.virtualAgents || []).find(
+        (a) => a.id === sellerId
+      );
+      if (aiMatch) {
+        nextSeller = {
+          id: aiMatch.id,
+          name: aiMatch.name,
+          role: aiMatch.specialty
+            ? `IA • ${aiMatch.specialty}`
+            : "Atendente Virtual (IA)",
+          avatar: "",
+          initials: aiMatch.initials || "IA",
+          color: aiMatch.color || "from-violet-500 to-fuchsia-500",
+        };
+      } else if (sellerId === "ai-virtual") {
+        nextSeller = {
+          id: "ai-virtual",
+          name: automation.virtualAgent.name || "Assistente Virtual (IA)",
+          role: "Atendente Virtual (IA)",
+          avatar: "",
+          initials: "IA",
+          color: "from-violet-500 to-fuchsia-500",
+        };
+      } else {
+        const agent = agents.find((a) => a.id === sellerId);
+        if (!agent) return;
+        nextSeller = {
+          id: agent.id,
+          name: agent.name,
+          role: "Atendente",
+          avatar: "",
+          initials: agent.initials,
+          color: agent.color,
+        };
+      }
     }
 
     updateDealById(dealId, (d) => ({
@@ -1049,21 +1020,21 @@ export default function CRMWorkspacePage() {
     );
   }
 
-  const assignableAgents: AgentAccount[] =
-    automation.aiAllowedByMaster && automation.virtualAgent.enabled
-      ? [
-          {
-            id: "ai-virtual",
-            name: `🤖 ${automation.virtualAgent.name || "Assistente Virtual"} (IA)`,
-            username: "ia-virtual",
-            initials: "IA",
-            color: "from-violet-500 to-fuchsia-500",
-            active: true,
-            createdAt: "",
-          },
-          ...agents,
-        ]
-      : agents;
+  const activeAiAssignable: AgentAccount[] = automation.aiAllowedByMaster
+    ? (automation.virtualAgents || [])
+        .filter((ai) => ai.active)
+        .map((ai) => ({
+          id: ai.id,
+          name: `🤖 ${ai.name}${ai.specialty ? ` (${ai.specialty})` : " (IA)"}`,
+          username: "ia-virtual",
+          initials: ai.initials || "IA",
+          color: ai.color || "from-violet-500 to-fuchsia-500",
+          active: true,
+          createdAt: ai.createdAt,
+        }))
+    : [];
+
+  const assignableAgents: AgentAccount[] = [...activeAiAssignable, ...agents];
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f8f9fa] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
@@ -1081,7 +1052,12 @@ export default function CRMWorkspacePage() {
         evolutionStatus={evolutionConfig.status}
         dealsCount={deals.length}
         userMode={user.mode}
-        agentsCount={agents.length}
+        agentsCount={
+          agents.length +
+          (automation.aiAllowedByMaster
+            ? (automation.virtualAgents || []).length
+            : 0)
+        }
         companiesCount={companies.length}
       />
 

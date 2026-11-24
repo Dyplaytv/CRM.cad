@@ -19,6 +19,7 @@ import {
   EvolutionConfig,
   FirstContactConfig,
   VirtualAgentConfig,
+  VirtualAgentProfile,
 } from "@/types/crm";
 
 function buildTenantEvolutionConfig(
@@ -106,6 +107,7 @@ export async function PUT(req: NextRequest) {
       evolutionConfig?: EvolutionConfig;
       automation?: {
         virtualAgent?: Partial<VirtualAgentConfig>;
+        virtualAgents?: VirtualAgentProfile[];
         firstContact?: Partial<FirstContactConfig>;
       };
       revenueTargets?: number[];
