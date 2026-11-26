@@ -155,7 +155,11 @@ export interface VirtualAgentProfile {
   createdAt: string;
 }
 
-export type FirstContactMode = "manager" | "specific_agent" | "round_robin";
+export type FirstContactMode =
+  | "manager"
+  | "specific_agent"
+  | "round_robin"
+  | "ai_manager";
 
 export interface FirstContactConfig {
   mode: FirstContactMode;
@@ -163,11 +167,19 @@ export interface FirstContactConfig {
   roundRobinIndex?: number;
 }
 
+export interface AiSupervisorConfig {
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  allowReassignFromHuman: boolean;
+}
+
 export interface CompanyAutomationConfig {
   aiAllowedByMaster: boolean;
   virtualAgent: VirtualAgentConfig;
   virtualAgents: VirtualAgentProfile[];
   firstContact: FirstContactConfig;
+  aiSupervisor?: AiSupervisorConfig;
 }
 
 export interface RevenueTargets {
@@ -191,6 +203,7 @@ export interface AgentAccount {
   companyId?: string;
   name: string;
   username: string;
+  specialty?: string;
   initials: string;
   color: string;
   active: boolean;

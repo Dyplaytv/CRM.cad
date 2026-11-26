@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import {
   AgentAccount,
+  AiSupervisorConfig,
   CompanyAutomationConfig,
   Deal,
   FirstContactConfig,
@@ -40,12 +41,18 @@ interface AgentsManagerProps {
     virtualAgent?: Partial<VirtualAgentConfig>;
     virtualAgents?: VirtualAgentProfile[];
     firstContact?: Partial<FirstContactConfig>;
+    aiSupervisor?: Partial<AiSupervisorConfig>;
   }) => Promise<{ ok: boolean; error?: string }>;
   onCreateAgent: (input: {
     name: string;
     username: string;
     password: string;
+    specialty?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  onUpdateAgent: (
+    id: string,
+    input: { name: string; specialty: string }
+  ) => Promise<{ ok: boolean; error?: string }>;
   onDeleteAgent: (id: string) => Promise<void>;
 }
 
@@ -63,6 +70,7 @@ export function AgentsManager({
   automation,
   onSaveAutomation,
   onCreateAgent,
+  onUpdateAgent,
   onDeleteAgent,
 }: AgentsManagerProps) {
   const [createTab, setCreateTab] = useState<"human" | "ai">("human");
@@ -71,10 +79,19 @@ export function AgentsManager({
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [specialty, setSpecialty] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Edição de Atendente Humano
+  const [editingHumanId, setEditingHumanId] = useState<string | null>(null);
+  const [editHumanForm, setEditHumanForm] = useState({
+    name: "",
+    specialty: "",
+  });
+  const [editHumanSaving, setEditHumanSaving] = useState(false);
 
   // Form Novo Atendente IA
   const [newAi, setNewAi] = useState(EMPTY_AI_FORM);
@@ -113,12 +130,31 @@ export function AgentsManager({
     text: string;
   } | null>(null);
 
+  // Gerente Artificial (Supervisor IA)
+  const [supForm, setSupForm] = useState<AiSupervisorConfig>(
+    automation.aiSupervisor || {
+      enabled: false,
+      model: "gpt-4o-mini",
+      instructions:
+        "Analise o assunto e o tom da conversa. Encaminhe para o atendente mais adequado de acordo com suas especialidades. Se o cliente demonstrar irritação, pedir cancelamento/reclamação ou exigir negociação complexa, transfira para um atendente humano ou gerente.",
+      allowReassignFromHuman: true,
+    }
+  );
+  const [supSaving, setSupSaving] = useState(false);
+  const [supMsg, setSupMsg] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+
   const virtualAgents = automation.virtualAgents || [];
 
   useEffect(() => {
     setFirstMode(automation.firstContact.mode);
     setSpecificAgentId(automation.firstContact.specificAgentId || "");
     setOpenAiKey(automation.virtualAgent.openAiApiKey || "");
+    if (automation.aiSupervisor) {
+      setSupForm(automation.aiSupervisor);
+    }
   }, [automation]);
 
   const handleSubmitHuman = async (e: React.FormEvent) => {
@@ -127,7 +163,7 @@ export function AgentsManager({
     setSuccessMsg(null);
     setLoading(true);
     try {
-      const res = await onCreateAgent({ name, username, password });
+      const res = await onCreateAgent({ name, username, password, specialty });
       if (!res.ok) {
         setError(res.error || "Não foi possível criar o atendente.");
         return;
@@ -136,9 +172,34 @@ export function AgentsManager({
       setName("");
       setUsername("");
       setPassword("");
+      setSpecialty("");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSaveEditHuman = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingHumanId) return;
+    setEditHumanSaving(true);
+    const res = await onUpdateAgent(editingHumanId, editHumanForm);
+    setEditHumanSaving(false);
+    if (res.ok) {
+      setEditingHumanId(null);
+    }
+  };
+
+  const handleSaveSupervisor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSupMsg(null);
+    setSupSaving(true);
+    const res = await onSaveAutomation({ aiSupervisor: supForm });
+    setSupSaving(false);
+    setSupMsg(
+      res.ok
+        ? { type: "ok", text: "Gerente Artificial (Supervisor IA) salvo!" }
+        : { type: "err", text: res.error || "Erro ao salvar Supervisor IA." }
+    );
   };
 
   const handleCreateAiAgent = async (e: React.FormEvent) => {
@@ -363,6 +424,7 @@ export function AgentsManager({
                   type={showPassword ? "text" : "password"}
                   required
                   minLength={4}
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Mínimo 4 caracteres"
@@ -380,6 +442,19 @@ export function AgentsManager({
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
+                Características / Especialidade (usado pelo Gerente Artificial)
+              </label>
+              <input
+                type="text"
+                value={specialty}
+                onChange={(e) => setSpecialty(e.target.value)}
+                placeholder="Ex: Fechamento comercial, clientes VIP, negociação ou suporte avançado"
+                className="w-full rounded-xl px-3.5 py-2.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+              />
             </div>
 
             <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-1">
@@ -759,6 +834,69 @@ export function AgentsManager({
               const assignedCount = deals.filter(
                 (d) => d.seller?.id === agent.id
               ).length;
+
+              if (editingHumanId === agent.id) {
+                return (
+                  <form
+                    key={agent.id}
+                    onSubmit={handleSaveEditHuman}
+                    className="p-4 rounded-xl border border-indigo-500/40 bg-indigo-500/5 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                        Editando {agent.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingHumanId(null)}
+                        className="p-1 text-zinc-400 hover:text-zinc-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={editHumanForm.name}
+                      onChange={(e) =>
+                        setEditHumanForm((p) => ({ ...p, name: e.target.value }))
+                      }
+                      placeholder="Nome completo"
+                      className="w-full rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                    <input
+                      type="text"
+                      value={editHumanForm.specialty}
+                      onChange={(e) =>
+                        setEditHumanForm((p) => ({
+                          ...p,
+                          specialty: e.target.value,
+                        }))
+                      }
+                      placeholder="Características / Especialidade..."
+                      className="w-full rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingHumanId(null)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={editHumanSaving}
+                        className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {editHumanSaving ? "Salvando..." : "Salvar"}
+                      </button>
+                    </div>
+                  </form>
+                );
+              }
+
               return (
                 <div
                   key={agent.id}
@@ -778,19 +916,40 @@ export function AgentsManager({
                         <KeyRound className="w-3 h-3 shrink-0 text-indigo-500" />
                         Login: <span className="font-mono">{agent.username}</span>
                       </p>
+                      {agent.specialty && (
+                        <p className="text-[10px] text-indigo-500 dark:text-indigo-400 truncate mt-0.5">
+                          {agent.specialty}
+                        </p>
+                      )}
                       <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
                         {assignedCount} atendimento(s) atribuído(s)
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => onDeleteAgent(agent.id)}
-                    title="Remover atendente"
-                    className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingHumanId(agent.id);
+                        setEditHumanForm({
+                          name: agent.name,
+                          specialty: agent.specialty || "",
+                        });
+                      }}
+                      title="Editar nome e características"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onDeleteAgent(agent.id)}
+                      title="Remover atendente"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -892,7 +1051,7 @@ export function AgentsManager({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <button
             type="button"
             onClick={() => setFirstMode("manager")}
@@ -961,6 +1120,31 @@ export function AgentsManager({
               Repassa cada novo atendimento automaticamente em sequência entre os atendentes.
             </p>
           </button>
+
+          {automation.aiAllowedByMaster && (
+            <button
+              type="button"
+              onClick={() => setFirstMode("ai_manager")}
+              className={`text-left p-4 rounded-xl border transition-all ${
+                firstMode === "ai_manager"
+                  ? "border-violet-500 bg-violet-500/10 ring-1 ring-violet-500/30"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/50 hover:border-zinc-300 dark:hover:border-zinc-700"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                  <Bot className="w-4 h-4 text-violet-500" />
+                  Gerente Artificial (IA)
+                </span>
+                {firstMode === "ai_manager" && (
+                  <Check className="w-4 h-4 text-violet-500" />
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                A IA lê a primeira mensagem e envia para o atendente com a habilidade certa.
+              </p>
+            </button>
+          )}
         </div>
 
         {firstMode === "specific_agent" && (
@@ -1019,6 +1203,122 @@ export function AgentsManager({
           </button>
         </div>
       </div>
+
+      {/* Gerente Artificial (Supervisor IA em Tempo Real) */}
+      {automation.aiAllowedByMaster && (
+        <div className="rounded-2xl border border-violet-500/30 bg-white dark:bg-zinc-900/90 p-6 shadow-sm space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-500">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                  Gerente Artificial (Supervisão & Roteamento Contínuo)
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Lê todas as mensagens recebidas, escolhe o atendente certo pelas características e transfere automaticamente se o assunto ou tom mudar.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setSupForm((p) => ({ ...p, enabled: !p.enabled }))
+              }
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                supForm.enabled
+                  ? "bg-violet-600 text-white"
+                  : "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+              }`}
+            >
+              {supForm.enabled ? "Supervisão Ativa" : "Desativado"}
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveSupervisor} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+              <div>
+                <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
+                  Modelo de Análise do Supervisor
+                </label>
+                <select
+                  value={supForm.model}
+                  onChange={(e) =>
+                    setSupForm((p) => ({ ...p, model: e.target.value }))
+                  }
+                  className="w-full rounded-xl px-3.5 py-2.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-violet-500"
+                >
+                  <option value="gpt-4o-mini">gpt-4o-mini (Rápido)</option>
+                  <option value="gpt-4o">gpt-4o (Análise profunda)</option>
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                </select>
+              </div>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/50 cursor-pointer mt-4 md:mt-0">
+                <input
+                  type="checkbox"
+                  checked={supForm.allowReassignFromHuman}
+                  onChange={(e) =>
+                    setSupForm((p) => ({
+                      ...p,
+                      allowReassignFromHuman: e.target.checked,
+                    }))
+                  }
+                  className="mt-0.5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500"
+                />
+                <span className="text-[11px] text-zinc-600 dark:text-zinc-300">
+                  <strong>Permitir trocar atendente humano:</strong> se uma conversa já estiver com um humano e mudar de assunto/tom, o Gerente IA também pode reencaminhar.
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
+                Regras do Gerente Artificial (Quando transferir e critérios de tom)
+              </label>
+              <textarea
+                rows={4}
+                value={supForm.instructions}
+                onChange={(e) =>
+                  setSupForm((p) => ({ ...p, instructions: e.target.value }))
+                }
+                placeholder="Ex: Se o cliente quiser orçamento, envie para Vendas. Se ficar irritado ou pedir cancelamento, transfira para um atendente humano."
+                className="w-full rounded-xl p-3.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-violet-500 leading-relaxed"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                {supMsg && (
+                  <p
+                    className={`text-xs flex items-center gap-1.5 ${
+                      supMsg.type === "err"
+                        ? "text-rose-500"
+                        : "text-emerald-500"
+                    }`}
+                  >
+                    {supMsg.type === "err" ? (
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    )}
+                    {supMsg.text}
+                  </p>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={supSaving}
+                className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition-colors"
+              >
+                <Bot className="w-4 h-4" />
+                {supSaving ? "Salvando..." : "Salvar Gerente Artificial"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

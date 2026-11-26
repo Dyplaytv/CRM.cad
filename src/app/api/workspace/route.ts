@@ -14,6 +14,7 @@ import {
   upsertWorkspaceDeal,
 } from "@/lib/crmStore";
 import {
+  AiSupervisorConfig,
   CompanyAutomationConfig,
   Deal,
   EvolutionConfig,
@@ -109,6 +110,7 @@ export async function PUT(req: NextRequest) {
         virtualAgent?: Partial<VirtualAgentConfig>;
         virtualAgents?: VirtualAgentProfile[];
         firstContact?: Partial<FirstContactConfig>;
+        aiSupervisor?: Partial<AiSupervisorConfig>;
       };
       revenueTargets?: number[];
     };

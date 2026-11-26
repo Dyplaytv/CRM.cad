@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/authSession";
-import { createAgent, deleteAgent, listAgents } from "@/lib/crmStore";
+import { createAgent, deleteAgent, listAgents, updateAgent } from "@/lib/crmStore";
 
 export async function GET(req: NextRequest) {
   const user = getSessionUser(req);
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       name?: string;
       username?: string;
       password?: string;
+      specialty?: string;
     };
 
     const result = createAgent({
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       name: body.name || "",
       username: body.username || "",
       password: body.password || "",
+      specialty: body.specialty || "",
     });
 
     if (!result.ok) {
@@ -78,4 +80,35 @@ export async function DELETE(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = getSessionUser(req);
+  if (!user || user.mode !== "manager") {
+    return NextResponse.json(
+      { ok: false, error: "Apenas o Gerente pode editar atendentes." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    const body = (await req.json()) as {
+      id?: string;
+      name?: string;
+      specialty?: string;
+    };
+    const result = updateAgent(body.id || "", user.companyId, {
+      name: body.name,
+      specialty: body.specialty,
+    });
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, agent: result.agent });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Erro ao atualizar atendente." },
+      { status: 400 }
+    );
+  }
 }

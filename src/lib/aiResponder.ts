@@ -1,11 +1,14 @@
 import { ChatMessage, Deal, Seller } from "@/types/crm";
 import {
+  buildVirtualAgentSeller,
   findCompanyIdByInstance,
   findEvolutionConfigByInstance,
   findVirtualAgentForDeal,
   getCompanyAutomationConfig,
   getWorkspaceDeals,
+  listAgents,
   resolveFirstContactSeller,
+  resolveManagerSeller,
   upsertWorkspaceDeal,
 } from "@/lib/crmStore";
 
@@ -113,6 +116,141 @@ async function sendEvolutionReply(params: {
   }
 }
 
+async function evaluateSupervisorRouting(params: {
+  companyId: string;
+  apiKey: string;
+  model: string;
+  instructions: string;
+  deal: Deal;
+  isNewLead: boolean;
+}): Promise<{ nextSeller: Seller; reason: string } | null> {
+  const auto = getCompanyAutomationConfig(params.companyId);
+  const humanAgents = listAgents(params.companyId).filter((a) => a.active);
+  const aiAgents = (auto.virtualAgents || []).filter((a) => a.active);
+  const managerSeller = resolveManagerSeller(params.companyId);
+
+  const candidates = [
+    ...aiAgents.map((a) => ({
+      id: a.id,
+      tipo: "Atendente IA",
+      nome: a.name,
+      caracteristicas: [a.specialty, a.personality].filter(Boolean).join(" | ") || "Atendimento virtual geral",
+    })),
+    ...humanAgents.map((a) => ({
+      id: a.id,
+      tipo: "Atendente Humano",
+      nome: a.name,
+      caracteristicas: a.specialty || "Atendente humano geral",
+    })),
+    {
+      id: managerSeller.id,
+      tipo: "Gerente Humano",
+      nome: managerSeller.name,
+      caracteristicas: "Escalonamento, reclamações graves, negociações especiais ou casos sem especialista.",
+    },
+  ];
+
+  if (candidates.length === 0) return null;
+
+  const historyText = params.deal.messages
+    .slice(-10)
+    .map((m) => `${m.sender === "client" ? "Cliente" : "Atendente"}: ${m.text}`)
+    .join("\n");
+
+  const systemPrompt = [
+    "Você é o Gerente Artificial (Supervisor de Atendimento) de um CRM no WhatsApp.",
+    "Sua função é ler as mensagens do cliente, avaliar o assunto, a intenção e o TOM da conversa (ex: dúvida simples, interesse comercial, suporte técnico, reclamação, irritação, pedido de cancelamento) e decidir qual atendente da equipe tem as características ideais para atender neste momento.",
+    params.instructions.trim()
+      ? `\nRegras da Empresa:\n${params.instructions.trim()}`
+      : "",
+    `\nEquipe disponível (use exatamente o "id" ao escolher):\n${JSON.stringify(candidates, null, 2)}`,
+    '\nResponda EXCLUSIVAMENTE em JSON válido no formato: {"action":"keep"|"transfer","targetId":"<id>","reason":"<motivo curto em português>"}',
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const userPrompt = params.isNewLead
+    ? `Novo lead entrou em contato.\nMensagens:\n${historyText}\nEscolha o melhor atendente (action: "transfer").`
+    : `Atendente atual: ${params.deal.seller.name} (id: ${params.deal.seller.id}, função: ${params.deal.seller.role}).\nMensagens recentes:\n${historyText}\nDecida se mantém ("keep") ou se a conversa mudou de assunto/tom e precisa transferir ("transfer") para outro atendente.`;
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: params.model || "gpt-4o-mini",
+        temperature: 0.2,
+        max_tokens: 200,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const raw = data.choices?.[0]?.message?.content;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      action?: string;
+      targetId?: string;
+      reason?: string;
+    };
+
+    if (parsed.action !== "transfer" || !parsed.targetId) return null;
+    if (!params.isNewLead && parsed.targetId === params.deal.seller.id) {
+      return null;
+    }
+
+    const aiMatch = aiAgents.find((a) => a.id === parsed.targetId);
+    if (aiMatch) {
+      return {
+        nextSeller: buildVirtualAgentSeller(
+          aiMatch.name,
+          aiMatch.id,
+          aiMatch.specialty,
+          aiMatch.initials,
+          aiMatch.color
+        ),
+        reason: parsed.reason || "Assunto compatível com atendente IA",
+      };
+    }
+
+    const humanMatch = humanAgents.find((a) => a.id === parsed.targetId);
+    if (humanMatch) {
+      return {
+        nextSeller: {
+          id: humanMatch.id,
+          name: humanMatch.name,
+          role: humanMatch.specialty ? `Humano • ${humanMatch.specialty}` : "Atendente",
+          avatar: "",
+          initials: humanMatch.initials,
+          color: humanMatch.color,
+        },
+        reason: parsed.reason || "Assunto ou tom direcionado para atendente humano",
+      };
+    }
+
+    if (parsed.targetId === managerSeller.id) {
+      return {
+        nextSeller: managerSeller,
+        reason: parsed.reason || "Escalonado para o Gerente",
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function processInboundWebhookAndAi(
   params: InboundWebhookParams
 ): Promise<{ assignedSeller: Seller; aiReply?: ChatMessage }> {
@@ -140,6 +278,8 @@ export async function processInboundWebhookAndAi(
     suffix.length >= 8
       ? deals.find((d) => d.contactPhone.replace(/\D/g, "").endsWith(suffix))
       : undefined;
+
+  const isNewLead = !targetDeal;
 
   if (targetDeal) {
     if (!targetDeal.messages.some((m) => m.id === inboundMsg.id)) {
@@ -205,6 +345,52 @@ export async function processInboundWebhookAndAi(
 
   let aiReply: ChatMessage | undefined;
   const automation = getCompanyAutomationConfig(companyId);
+
+  // Supervisão Contínua do Gerente Artificial (IA): lê as mensagens e roteia/transfere se mudar o assunto ou tom
+  const supervisor = automation.aiSupervisor;
+  const shouldRunSupervisor =
+    automation.aiAllowedByMaster &&
+    Boolean(automation.virtualAgent.openAiApiKey) &&
+    (Boolean(supervisor?.enabled) ||
+      (isNewLead && automation.firstContact.mode === "ai_manager"));
+
+  const currentIsAi = Boolean(
+    findVirtualAgentForDeal(companyId, targetDeal.seller?.id)
+  );
+  const canReassignCurrent =
+    isNewLead ||
+    currentIsAi ||
+    supervisor?.allowReassignFromHuman !== false;
+
+  if (shouldRunSupervisor && canReassignCurrent) {
+    const decision = await evaluateSupervisorRouting({
+      companyId,
+      apiKey: automation.virtualAgent.openAiApiKey,
+      model: supervisor?.model || automation.virtualAgent.model,
+      instructions: supervisor?.instructions || "",
+      deal: targetDeal,
+      isNewLead,
+    });
+
+    if (decision && decision.nextSeller.id !== targetDeal.seller?.id) {
+      targetDeal = {
+        ...targetDeal,
+        seller: decision.nextSeller,
+        timeline: [
+          {
+            id: `ev-sup-${Date.now()}`,
+            title: `Gerente IA ${isNewLead ? "direcionou" : "transferiu"} para ${decision.nextSeller.name}`,
+            description: decision.reason,
+            timestamp: timeLabel,
+            type: "stage",
+          },
+          ...targetDeal.timeline,
+        ],
+      };
+      upsertWorkspaceDeal(companyId, targetDeal);
+    }
+  }
+
   const matchedAi = findVirtualAgentForDeal(companyId, targetDeal.seller?.id);
 
   if (

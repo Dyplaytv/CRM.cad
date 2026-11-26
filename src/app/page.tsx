@@ -11,6 +11,7 @@ import {
 import { INITIAL_DEALS, KANBAN_STAGES, SELLERS } from "@/data/mockData";
 import {
   AgentAccount,
+  AiSupervisorConfig,
   AuthUser,
   ChatMessage,
   CompanyAccount,
@@ -406,8 +407,12 @@ export default function CRMWorkspacePage() {
             });
 
             const hasAiReplied = fresh.some((ev) => Boolean(ev.aiReply));
+            const latestAssignedSeller =
+              [...fresh].reverse().find((ev) => ev.assignedSeller)?.assignedSeller ||
+              deal.seller;
             return {
               ...deal,
+              seller: latestAssignedSeller,
               unreadCount: hasAiReplied
                 ? 0
                 : (deal.unreadCount ?? 0) + newMsgs.length,
@@ -609,6 +614,7 @@ export default function CRMWorkspacePage() {
     virtualAgent?: Partial<VirtualAgentConfig>;
     virtualAgents?: VirtualAgentProfile[];
     firstContact?: Partial<FirstContactConfig>;
+    aiSupervisor?: Partial<AiSupervisorConfig>;
   }): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await fetch("/api/workspace", {
@@ -788,6 +794,7 @@ export default function CRMWorkspacePage() {
     name: string;
     username: string;
     password: string;
+    specialty?: string;
   }): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await fetch("/api/agents", {
@@ -804,6 +811,31 @@ export default function CRMWorkspacePage() {
         return { ok: false, error: data.error || "Erro ao criar atendente." };
       }
       setAgents((prev) => [...prev, data.agent!]);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão com o servidor." };
+    }
+  };
+
+  const handleUpdateAgent = async (
+    id: string,
+    input: { name: string; specialty: string }
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/agents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...input }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        agent?: AgentAccount;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.agent) {
+        return { ok: false, error: data.error || "Erro ao atualizar atendente." };
+      }
+      setAgents((prev) => prev.map((a) => (a.id === id ? data.agent! : a)));
       return { ok: true };
     } catch {
       return { ok: false, error: "Falha de conexão com o servidor." };
@@ -1144,6 +1176,7 @@ export default function CRMWorkspacePage() {
               automation={automation}
               onSaveAutomation={handleSaveAutomation}
               onCreateAgent={handleCreateAgent}
+              onUpdateAgent={handleUpdateAgent}
               onDeleteAgent={handleDeleteAgent}
             />
           )}

@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import {
   AgentAccount,
+  AiSupervisorConfig,
   CompanyAccount,
   CompanyAutomationConfig,
   Deal,
@@ -31,6 +32,7 @@ interface WorkspaceData {
   virtualAgent?: VirtualAgentConfig;
   virtualAgents?: VirtualAgentProfile[];
   firstContact?: FirstContactConfig;
+  aiSupervisor?: AiSupervisorConfig;
   revenueTargets?: RevenueTargets;
 }
 
@@ -493,6 +495,7 @@ function toPublicAgent(agent: StoredAgent): AgentAccount {
     companyId: agent.companyId || DEFAULT_COMPANY_ID,
     name: agent.name,
     username: agent.username,
+    specialty: agent.specialty || "",
     initials: agent.initials,
     color: agent.color,
     active: agent.active,
@@ -513,6 +516,7 @@ export function createAgent(input: {
   name: string;
   username: string;
   password: string;
+  specialty?: string;
 }): { ok: true; agent: AgentAccount } | { ok: false; error: string } {
   const companyId = input.companyId || DEFAULT_COMPANY_ID;
   const name = input.name.trim();
@@ -535,6 +539,7 @@ export function createAgent(input: {
     companyId,
     name,
     username,
+    specialty: (input.specialty || "").trim(),
     initials: computeInitials(name),
     color: AVATAR_COLORS[agents.length % AVATAR_COLORS.length],
     active: true,
@@ -544,6 +549,33 @@ export function createAgent(input: {
 
   saveAgents([...agents, newAgent]);
   return { ok: true, agent: toPublicAgent(newAgent) };
+}
+
+export function updateAgent(
+  id: string,
+  companyId: string | undefined,
+  input: { name?: string; specialty?: string }
+): { ok: true; agent: AgentAccount } | { ok: false; error: string } {
+  const agents = loadAgents();
+  let updated: StoredAgent | null = null;
+  const next = agents.map((a) => {
+    if (a.id !== id) return a;
+    if (companyId && (a.companyId || DEFAULT_COMPANY_ID) !== companyId) return a;
+    const nextName = input.name !== undefined ? input.name.trim() || a.name : a.name;
+    updated = {
+      ...a,
+      name: nextName,
+      initials: computeInitials(nextName),
+      specialty:
+        input.specialty !== undefined ? input.specialty.trim() : a.specialty,
+    };
+    return updated;
+  });
+  if (!updated) {
+    return { ok: false, error: "Atendente não encontrado." };
+  }
+  saveAgents(next);
+  return { ok: true, agent: toPublicAgent(updated) };
 }
 
 export function deleteAgent(id: string, companyId?: string): boolean {
@@ -694,6 +726,14 @@ export const DEFAULT_FIRST_CONTACT_CONFIG: FirstContactConfig = {
   roundRobinIndex: 0,
 };
 
+export const DEFAULT_AI_SUPERVISOR_CONFIG: AiSupervisorConfig = {
+  enabled: false,
+  model: "gpt-4o-mini",
+  instructions:
+    "Analise o assunto e o tom da conversa. Encaminhe para o atendente mais adequado de acordo com suas especialidades. Se o cliente demonstrar irritação, pedir cancelamento/reclamação ou exigir negociação complexa, transfira para um atendente humano ou gerente.",
+  allowReassignFromHuman: true,
+};
+
 export function findCompanyIdByInstance(instanceName: string): string {
   const target = instanceName.trim().toLowerCase();
   if (!target) return DEFAULT_COMPANY_ID;
@@ -750,6 +790,10 @@ export function getCompanyAutomationConfig(
       ...DEFAULT_FIRST_CONTACT_CONFIG,
       ...(ws?.firstContact || {}),
     },
+    aiSupervisor: {
+      ...DEFAULT_AI_SUPERVISOR_CONFIG,
+      ...(ws?.aiSupervisor || {}),
+    },
   };
 }
 
@@ -759,6 +803,7 @@ export function setCompanyAutomationConfig(
     virtualAgent?: Partial<VirtualAgentConfig>;
     virtualAgents?: VirtualAgentProfile[];
     firstContact?: Partial<FirstContactConfig>;
+    aiSupervisor?: Partial<AiSupervisorConfig>;
   }
 ): CompanyAutomationConfig {
   const all = loadWorkspaces();
@@ -814,6 +859,14 @@ export function setCompanyAutomationConfig(
       }
     : existingAuto.firstContact;
 
+  const nextAiSupervisor: AiSupervisorConfig = input.aiSupervisor
+    ? {
+        ...DEFAULT_AI_SUPERVISOR_CONFIG,
+        ...(existingAuto.aiSupervisor || {}),
+        ...input.aiSupervisor,
+      }
+    : existingAuto.aiSupervisor || DEFAULT_AI_SUPERVISOR_CONFIG;
+
   saveWorkspaces({
     ...all,
     [companyId]: {
@@ -821,10 +874,34 @@ export function setCompanyAutomationConfig(
       virtualAgent: nextVirtualAgent,
       virtualAgents: nextVirtualAgents,
       firstContact: nextFirstContact,
+      aiSupervisor: nextAiSupervisor,
     },
   });
 
   return getCompanyAutomationConfig(companyId);
+}
+
+export function resolveManagerSeller(companyId = DEFAULT_COMPANY_ID): Seller {
+  const companyManagers = listManagers().filter(
+    (m) => m.companyId === companyId && m.active
+  );
+  return companyManagers[0]
+    ? {
+        id: companyManagers[0].id,
+        name: companyManagers[0].name,
+        role: "Gerente",
+        avatar: "",
+        initials: companyManagers[0].initials,
+        color: companyManagers[0].color,
+      }
+    : {
+        id: "manager-default",
+        name: "Gerente",
+        role: "Gerente",
+        avatar: "",
+        initials: "GE",
+        color: "from-indigo-500 to-violet-500",
+      };
 }
 
 export function findVirtualAgentForDeal(
